@@ -1,6 +1,6 @@
 .PHONY: setup test lint vuln dev demo-claim claim sync-once
 
-DEMO_TOKEN := aHR0cHM6Ly9iZXRhLWJyaWRnZS5zaW1wbGVmaW4ub3JnL3NpbXBsZWZpbi9jbGFpbS9ERU1PLXYyLTVERTZDQjUzQjU2Q0Q4NUJFMUQ2
+DEMO_TOKEN := aHR0cHM6Ly9iZXRhLWJyaWRnZS5zaW1wbGVmaW4ub3JnL3NpbXBsZWZpbi9jbGFpbS9ERU1PLXYyLTVERTZDQjUzQjU2Q0Q4NUJFMUQ2 # gitleaks:allow
 
 ## One-time: secret-scanning git hook + resolve dependencies.
 setup:

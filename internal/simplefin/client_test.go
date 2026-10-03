@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const secretPass = "s3cr3t-pa55w0rd"
+const secretPass = "s3cr3t-pa55w0rd" // gitleaks:allow
 
 func newTestServer(t *testing.T, h http.HandlerFunc) (*httptest.Server, string) {
 	t.Helper()
