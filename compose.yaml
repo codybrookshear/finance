@@ -1,0 +1,82 @@
+# Run with secrets injected from 1Password:
+#   op run --env-file=env/dev.env -- docker compose up --build
+#
+# Secrets reach containers as files under /run/secrets (not environment
+# variables), so they don't show up in `docker inspect` or process listings.
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: finance_owner
+      POSTGRES_DB: finance
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_owner_password
+      TZ: America/Los_Angeles
+    secrets: [postgres_owner_password, finance_sync_db_password, finance_web_db_password]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    networks: [db]            # internal only; no ports published
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "finance_owner", "-d", "finance"]
+      interval: 5s
+      retries: 20
+
+  migrate:
+    <<: *hardening
+    build: { context: ., args: { CMD: migrate } }
+    environment:
+      PGHOST: postgres
+      PGUSER: finance_owner
+      PGDATABASE: finance
+      PGSSLMODE: disable      # traffic never leaves the internal Docker network
+      DB_PASSWORD_FILE: /run/secrets/postgres_owner_password
+    secrets: [postgres_owner_password]
+    networks: [db]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  # One sync pass, then exit. In production a systemd timer runs
+  # `docker compose run --rm sync` a few times a day.
+  sync:
+    <<: *hardening
+    build: { context: ., args: { CMD: sync } }
+    environment:
+      PGHOST: postgres
+      PGUSER: finance_sync
+      PGDATABASE: finance
+      PGSSLMODE: disable
+      DB_PASSWORD_FILE: /run/secrets/finance_sync_db_password
+      SIMPLEFIN_ACCESS_URL_FILE: /run/secrets/simplefin_access_url
+      FINANCE_TZ: America/Los_Angeles
+    secrets: [finance_sync_db_password, simplefin_access_url]
+    networks: [db, egress]    # the only service allowed out to the internet
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    restart: "no"
+
+networks:
+  db:
+    internal: true            # no route to the internet
+  egress: {}
+
+volumes:
+  pgdata: {}
+
+secrets:
+  postgres_owner_password:
+    environment: POSTGRES_OWNER_PASSWORD
+  finance_sync_db_password:
+    environment: FINANCE_SYNC_DB_PASSWORD
+  finance_web_db_password:
+    environment: FINANCE_WEB_DB_PASSWORD
+  simplefin_access_url:
+    environment: SIMPLEFIN_ACCESS_URL

@@ -1,0 +1,44 @@
+name: ci
+on:
+  push: { branches: [main] }
+  pull_request: {}
+
+permissions:
+  contents: read   # least privilege for the workflow token
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: finance_owner
+          POSTGRES_DB: finance
+          POSTGRES_HOST_AUTH_METHOD: trust   # throwaway CI database
+        ports: ["127.0.0.1:5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U finance_owner -d finance"
+          --health-interval 2s --health-retries 30
+    env:
+      OWNER: postgres://finance_owner@127.0.0.1:5432/finance?sslmode=disable
+    steps:
+      # Tip: pin actions to full commit SHAs; Dependabot keeps them updated.
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod }
+      - name: Create app roles (mirrors db/init/01-roles.sh)
+        run: |
+          psql "$OWNER" -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE finance_sync LOGIN" -c "CREATE ROLE finance_web LOGIN" \
+            -c "REVOKE ALL ON DATABASE finance FROM PUBLIC" \
+            -c "GRANT CONNECT ON DATABASE finance TO finance_sync, finance_web"
+      - run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: DATABASE_URL="$OWNER" go run ./cmd/migrate
+      - run: go test -count=1 ./...
+        env:
+          TEST_DATABASE_URL: postgres://finance_sync@127.0.0.1:5432/finance?sslmode=disable
+          TEST_OWNER_DATABASE_URL: ${{ env.OWNER }}
+      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
