@@ -1,0 +1,57 @@
+# Cloudflare Tunnel on the droplet. scripts/tunnel-deploy.sh installs it as
+# /etc/systemd/system/cloudflared.service.
+#
+# Runs on the host rather than in Docker Compose: it's the only way in over
+# SSH, so it must keep working when Docker or the app is broken.
+#
+# The credentials file stays root-only (/etc/cloudflared/tunnel.json, 0600).
+# systemd gives the service a private copy (LoadCredential), and the service
+# runs as a throwaway unprivileged user with most of the system hidden from it.
+
+[Unit]
+Description=Cloudflare Tunnel (finance)
+Wants=network-online.target
+After=network-online.target
+# Never give up restarting: this is the SSH lifeline.
+StartLimitIntervalSec=0
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/cloudflared --no-autoupdate tunnel --config /etc/cloudflared/config.yml run --credentials-file %d/tunnel.json
+LoadCredential=tunnel.json:/etc/cloudflared/tunnel.json
+# READY is sent once the first connection to Cloudflare is up.
+TimeoutStartSec=60
+Restart=always
+RestartSec=5s
+
+DynamicUser=yes
+UMask=0077
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateUsers=yes
+ProtectProc=invisible
+ProcSubset=pid
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

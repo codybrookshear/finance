@@ -22,6 +22,9 @@ behind Cloudflare Access, and a local MCP server for Claude.
 
 - **Network:** Postgres sits on an `internal` Docker network with no internet route
   and no published ports. Only `sync` can reach the internet.
+- **No open ports.** SSH (and later the web app) comes in through a Cloudflare Tunnel
+  behind Cloudflare Access; cloudflared re-checks the Access JWT before connecting
+  to sshd. See [deploy/cloudflared/README.md](deploy/cloudflared/README.md).
 - **Containers:** distroless, non-root, read-only filesystem, all capabilities dropped.
 - **Secrets:** 1Password is the source of truth. `env/*.env` contain only
   `op://` references and are safe to commit. A gitleaks pre-commit hook blocks
@@ -37,6 +40,8 @@ internal/syncer     incremental + backfill logic
 internal/store      Postgres access, migration runner
 migrations/     SQL schema + grants (embedded in the migrate binary)
 db/init/        creates app roles on first DB start
+deploy/cloudflared  tunnel config + hardened systemd unit (runbook inside)
+scripts/        droplet bootstrap, tunnel create/deploy/install
 ```
 
 ## Getting started

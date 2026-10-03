@@ -1,0 +1,33 @@
+# cloudflared config for the droplet. scripts/tunnel-deploy.sh installs it as
+# /etc/cloudflared/config.yml.
+#
+# Locally-managed tunnel: this file, not the Cloudflare dashboard, decides what
+# the tunnel can reach. Nothing here is secret. The tunnel credentials live in
+# 1Password and systemd hands them to the service (see cloudflared.service).
+#
+# Fill in the REPLACE_ME values from scripts/tunnel-create.sh and the Access
+# app (deploy/cloudflared/README.md); the deploy script refuses to run until
+# they're filled in.
+
+tunnel: REPLACE_ME_TUNNEL_UUID
+
+# Health/metrics listener, loopback only (the install script checks /ready).
+metrics: 127.0.0.1:20241
+# Don't serve pprof/metrics over Cloudflare's remote management channel.
+management-diagnostics: false
+
+ingress:
+  # SSH. Cloudflare Access checks identity at the edge. The `access` block makes
+  # cloudflared ALSO verify the Access JWT (signature, expiry, audience) before
+  # it opens a connection to sshd, so a deleted/misconfigured Access app, or a
+  # second hostname routed to this tunnel, can't expose sshd.
+  - hostname: REPLACE_ME_SSH_HOSTNAME          # e.g. ssh.example.com
+    service: ssh://127.0.0.1:22
+    originRequest:
+      access:
+        required: true
+        teamName: REPLACE_ME_TEAM_NAME         # <team>.cloudflareaccess.com
+        audTag: [REPLACE_ME_SSH_AUD_TAG]       # Access app → Application Audience (AUD) tag
+
+  # Anything else, including hostnames not listed above.
+  - service: http_status:404

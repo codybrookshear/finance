@@ -202,8 +202,8 @@ BEFORE closing this session, in a NEW terminal check you can still get in:
 Root SSH login is now disabled. If you're locked out, use the DigitalOcean
 Recovery Console.
 
-Next: create the Cloudflare Tunnel, enable Access SSH, then delete the
-temporary port-22 rule from the DO firewall (and: sudo ufw delete allow 22/tcp).
+Next: set up the Cloudflare Tunnel and Access SSH, then close port 22
+(deploy/cloudflared/README.md in the repo).
 EOF
 if [[ -f /var/run/reboot-required ]]; then
   echo
