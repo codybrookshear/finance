@@ -57,15 +57,16 @@ make test         # unit + integration tests against a throwaway Postgres
 
 | item | fields |
 |---|---|
-| `finance-dev-db` | `owner_password`, `sync_password`, `web_password` (generate random) |
+| `finance-dev-db` | `owner_password`, `sync_password`, `web_password` (`scripts/db-passwords-create.sh finance-dev-db`) |
 | `simplefin-demo` | `access_url` (from `make demo-claim`) |
 | `finance-prod-db`, `simplefin` | same fields, for production later |
 
 ### Run locally with SimpleFIN demo data
 
 ```sh
-make demo-claim   # access URL → clipboard → paste into simplefin-demo/access_url
-make dev          # postgres + migrate + one sync pass
+eval "$(op signin)"   # 1Password CLI session for this shell
+make demo-claim       # access URL → 1Password simplefin-demo/access_url
+make dev              # postgres + migrate + one sync pass
 ```
 
 ## How sync works

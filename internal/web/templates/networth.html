@@ -1,0 +1,28 @@
+{{define "title"}}Net worth{{end}}
+
+{{define "head"}}<link rel="stylesheet" href="{{asset "vendor/uPlot.min.css"}}">{{end}}
+
+{{define "scripts"}}<script src="{{asset "vendor/uPlot.iife.min.js"}}"></script>{{end}}
+
+{{define "content" -}}
+<h1>Net worth</h1>
+<p class="big">{{range .Totals}}<span class="amt{{if neg .Amount}} out{{end}}">{{money .Amount .Currency}}</span> {{else}}—{{end}}</p>
+{{if .ChartDays -}}
+<div id="networth-chart" class="chart" data-days="{{.ChartDays}}" data-values="{{.ChartValues}}"
+     role="img" aria-label="Net worth over time"></div>
+{{- else -}}
+<p class="note">The chart builds up one day per sync, starting with the first. Check back tomorrow.</p>
+{{- end}}
+<h2>Accounts</h2>
+<ul class="list accounts">
+  {{- range .Accounts}}
+  <li>
+    <span class="what">{{.Name}}</span>
+    <span class="amt{{if neg .Balance}} out{{end}}">{{money .Balance .Currency}}</span>
+    <span class="meta">{{.Org}}{{if not .InNetWorth}} · not in net worth{{end}} · as of {{stamp .BalanceAt}}</span>
+  </li>
+  {{- else}}
+  <li class="empty">No accounts yet.</li>
+  {{- end}}
+</ul>
+{{- end}}

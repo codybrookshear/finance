@@ -1,8 +1,11 @@
-# Run with secrets injected from 1Password:
-#   op run --env-file=env/dev.env -- docker compose up --build
+# Locally: `make dev`. It writes the secrets from 1Password into files in a
+# private RAM directory (scripts/secrets-write.sh), then runs compose with
+# FINANCE_SECRETS_DIR pointing there.
 #
 # Secrets reach containers as files under /run/secrets (not environment
 # variables), so they don't show up in `docker inspect` or process listings.
+# They're file-backed because Compose can't inject environment-sourced secrets
+# into read_only services.
 
 x-hardening: &hardening
   read_only: true
@@ -63,6 +66,26 @@ services:
       migrate: { condition: service_completed_successfully }
     restart: "no"
 
+  # The UI: read-only database role, on the internal network only (no internet
+  # access, no published port). How it's served is environment-specific:
+  # compose.dev.yaml serves HTTP on the LAN; in production it will listen on
+  # a Unix socket that cloudflared on the host connects to (WEB_SOCKET).
+  web:
+    <<: *hardening
+    build: { context: ., args: { CMD: web } }
+    environment:
+      PGHOST: postgres
+      PGUSER: finance_web
+      PGDATABASE: finance
+      PGSSLMODE: disable
+      DB_PASSWORD_FILE: /run/secrets/finance_web_db_password
+      FINANCE_TZ: America/Los_Angeles
+    secrets: [finance_web_db_password]
+    networks: [db]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    restart: unless-stopped
+
 networks:
   db:
     internal: true            # no route to the internet
@@ -73,10 +96,10 @@ volumes:
 
 secrets:
   postgres_owner_password:
-    environment: POSTGRES_OWNER_PASSWORD
+    file: ${FINANCE_SECRETS_DIR:?set FINANCE_SECRETS_DIR (see make dev)}/postgres_owner_password
   finance_sync_db_password:
-    environment: FINANCE_SYNC_DB_PASSWORD
+    file: ${FINANCE_SECRETS_DIR:?}/finance_sync_db_password
   finance_web_db_password:
-    environment: FINANCE_WEB_DB_PASSWORD
+    file: ${FINANCE_SECRETS_DIR:?}/finance_web_db_password
   simplefin_access_url:
-    environment: SIMPLEFIN_ACCESS_URL
+    file: ${FINANCE_SECRETS_DIR:?}/simplefin_access_url

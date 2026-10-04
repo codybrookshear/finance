@@ -1,0 +1,33 @@
+{{define "layout.html" -}}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<!-- htmx: no eval, no inline styles, and no history snapshots in localStorage
+     (they would keep financial data on the device). -->
+<meta name="htmx-config" content='{"allowEval":false,"allowScriptTags":false,"includeIndicatorStyles":false,"historyCacheSize":0,"refreshOnHistoryMiss":true,"selfRequestsOnly":true}'>
+<title>{{template "title" .}} · Finance</title>
+<link rel="stylesheet" href="{{asset "app.css"}}">
+{{- block "head" .}}{{end}}
+</head>
+<body>
+<header class="top">
+  <nav>
+    <a href="/transactions"{{if eq .Page "transactions"}} aria-current="page"{{end}}>Transactions</a>
+    <a href="/spending"{{if eq .Page "spending"}} aria-current="page"{{end}}>Spending</a>
+    <a href="/networth"{{if eq .Page "networth"}} aria-current="page"{{end}}>Net worth</a>
+  </nav>
+</header>
+<main>
+{{template "content" .}}
+</main>
+<footer>{{.Email}} · last sync {{stamp .LastSync}}</footer>
+{{- block "scripts" .}}{{end}}
+<script src="{{asset "app.js"}}"></script>
+</body>
+</html>
+{{end}}

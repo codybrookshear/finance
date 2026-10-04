@@ -1,0 +1,32 @@
+{{define "title"}}Spending{{end}}
+
+{{define "content" -}}
+<h1>Spending</h1>
+<p class="note">Last 12 months of posted transactions, transfers left out. Until
+transactions are categorized, all money out is "Uncategorized", including
+credit-card payments, so purchases on a card count twice.</p>
+{{range $i, $m := .Months -}}
+<details class="month"{{if eq $i 0}} open{{end}}>
+  <summary>
+    <span class="what">{{monthName .YearMonth}}</span>
+    <span class="amt">{{money .Spent ""}}</span>
+    <span class="meta">in {{money .Income ""}}</span>
+  </summary>
+  <ul class="list cats">
+    {{- range .Categories}}
+    <li>
+      <span class="what">{{.Label}}</span>
+      <span class="amt">{{money .Amount ""}}</span>
+      <meter min="0" max="{{$m.Spent}}" value="{{.Amount}}"></meter>
+    </li>
+    {{- end}}
+    {{- range .IncomeCategories}}
+    <li class="income"><span class="what">{{.Label}} (in)</span><span class="amt in">{{money .Amount ""}}</span></li>
+    {{- end}}
+  </ul>
+  <p><a href="/transactions?from={{.From}}&amp;to={{.To}}">Transactions in {{monthName .YearMonth}}</a></p>
+</details>
+{{else -}}
+<p class="empty">No posted transactions in the last 12 months.</p>
+{{end}}
+{{- end}}

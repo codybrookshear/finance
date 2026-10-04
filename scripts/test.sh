@@ -5,7 +5,7 @@ set -eu
 
 NAME=finance-testdb
 PORT=55432
-remove_db() { docker rm -f "$NAME" >/dev/null 2>&1 || true; }
+remove_db() { docker rm -fv "$NAME" >/dev/null 2>&1 || true; }  # -v: its anonymous data volume too
 remove_db   # leftover from an interrupted run
 
 SECRETS="$(mktemp -d)"
@@ -36,6 +36,9 @@ echo
 
 OWNER="postgres://finance_owner@127.0.0.1:$PORT/finance?sslmode=disable"
 SYNC="postgres://finance_sync@127.0.0.1:$PORT/finance?sslmode=disable"
+WEB="postgres://finance_web@127.0.0.1:$PORT/finance?sslmode=disable"
 
 DATABASE_URL="$OWNER" go run ./cmd/migrate
-TEST_DATABASE_URL="$SYNC" TEST_OWNER_DATABASE_URL="$OWNER" go test -count=1 ./...
+# -p 1: the packages share this database and reset tables between tests.
+TEST_DATABASE_URL="$SYNC" TEST_OWNER_DATABASE_URL="$OWNER" TEST_WEB_DATABASE_URL="$WEB" \
+  go test -count=1 -p 1 ./...

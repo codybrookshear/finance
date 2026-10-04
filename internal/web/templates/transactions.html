@@ -1,0 +1,62 @@
+{{define "title"}}Transactions{{end}}
+
+{{define "scripts"}}<script src="{{asset "vendor/htmx.min.js"}}"></script>{{end}}
+
+{{define "content" -}}
+<form class="filters" action="/transactions" method="get" role="search"
+      hx-get="/transactions" hx-target="#results" hx-swap="outerHTML" hx-push-url="true"
+      hx-trigger="submit, input delay:300ms from:#q, change">
+  <input id="q" type="search" name="q" value="{{.Q}}" maxlength="200" autocomplete="off"
+         enterkeyhint="search" placeholder="Search payee, description or amount" aria-label="Search">
+  <div class="row">
+    <select name="account" aria-label="Account">
+      <option value="">All accounts</option>
+      {{- range .Accounts}}
+      <option value="{{.ID}}"{{if eq .ID $.Account}} selected{{end}}>{{.Name}}</option>
+      {{- end}}
+    </select>
+    <input type="date" name="from" value="{{.From}}" aria-label="From">
+    <input type="date" name="to" value="{{.To}}" aria-label="To">
+  </div>
+  <noscript><button type="submit">Search</button></noscript>
+</form>
+{{template "results" .}}
+{{- end}}
+
+{{define "results" -}}
+<section id="results">
+  <p class="summary">
+    {{commas .Count}} transaction{{if ne .Count 1}}s{{end}}
+    {{- range .Totals}} · total <span class="amt{{if neg .Amount}} out{{else}} in{{end}}">{{money .Amount .Currency}}</span>{{end}}
+    {{- if .Filtered}} · <a href="/transactions">clear</a>{{end}}
+  </p>
+  <ul class="list txns">
+    {{template "rows" .}}
+  </ul>
+</section>
+{{- end}}
+
+{{define "rows" -}}
+{{range .Txns -}}
+<li{{if .Pending}} class="pending"{{end}}>
+  <details>
+    <summary>
+      <span class="what">{{if .Description}}{{.Description}}{{else}}{{.Payee}}{{end}}</span>
+      <span class="amt{{if neg .Amount}} out{{else}} in{{end}}">{{money .Amount .Currency}}</span>
+      <span class="meta">{{day .At}} · {{.Account}}
+        {{- if .Category}} · {{.Category}}{{end}}
+        {{- if .Pending}} · pending{{end}}
+        {{- if .Transfer}} · transfer{{end}}</span>
+    </summary>
+    <dl>
+      {{- if .Payee}}<dt>Payee</dt><dd>{{.Payee}}</dd>{{end}}
+      {{- if .Memo}}<dt>Bank text</dt><dd>{{.Memo}}</dd>{{end}}
+      <dt>Account</dt><dd>{{.Account}}</dd>
+    </dl>
+  </details>
+</li>
+{{else -}}
+<li class="empty">No transactions match.</li>
+{{end -}}
+{{if .Next}}<li id="more" class="more" hx-get="{{.Next}}" hx-trigger="revealed" hx-swap="outerHTML">Loading…</li>{{end}}
+{{- end}}

@@ -1,0 +1,13 @@
+# Development overrides, used by `make dev`: the UI over plain HTTP on this
+# machine's LAN address, Cloudflare Access checks off, a fixed dev user. Only
+# for SimpleFIN demo data (env/dev.env). WEB_DEV_BIND=127.0.0.1 keeps it local.
+services:
+  web:
+    environment:
+      WEB_ADDR: 0.0.0.0:8080
+      WEB_DEV_EMAIL: dev@localhost
+    networks: [db, devweb]   # a published port needs a non-internal network
+    ports: ["${WEB_DEV_BIND:-0.0.0.0}:8080:8080"]
+
+networks:
+  devweb: {}

@@ -15,8 +15,10 @@ Single user (me). Security is the top priority; prefer fewer dependencies.
   scripts/CDNs, strict CSP, `Cache-Control: no-store`. Passkey login as inner layer.
 - MCP: local Go server on my Mac (official MCP Go SDK) calling /api with a Cloudflare
   Access service token kept in macOS Keychain. Read-only tools.
-- Secrets: 1Password is the source of truth (`op run --env-file=env/*.env`; env files hold
-  only op:// refs). Containers get secrets as files under /run/secrets, never env vars.
+- Secrets: 1Password is the source of truth; env/*.env hold only op:// refs.
+  `scripts/secrets-write.sh` writes each one to a file in a private dir (RAM locally);
+  compose mounts them as file-backed secrets under /run/secrets, never env vars
+  (env-sourced Compose secrets don't work with read_only services).
 - Images: GHCR, built by GitHub Actions.
 
 ## Security invariants (don't break these)
@@ -24,8 +26,9 @@ Single user (me). Security is the top priority; prefer fewer dependencies.
 - DB roles: finance_owner (migrations only), finance_sync (bank columns only, via
   column-level grants), finance_web (read-only). New tables need explicit grants in a migration.
 - Sync must never overwrite user fields (categories, notes, is_transfer, display names).
-- Postgres stays on the internal Docker network; only `sync` has egress. (cloudflared is on
-  the host; the web container will need a 127.0.0.1-only published port for it.)
+- Postgres stays on the internal Docker network; only `sync` has egress. `web` is on the
+  internal network only, so it can't publish a port: in production it listens on a Unix
+  socket that cloudflared (host) connects to. compose.dev.yaml (dev only) adds a LAN port.
 - Every tunnel ingress rule (except the 404 catch-all) has `access: required: true`.
 - Money is NUMERIC / string decimals, never float64.
 
@@ -37,8 +40,10 @@ Single user (me). Security is the top priority; prefer fewer dependencies.
   port 22 closed at the DO firewall (2026-10-03).
 - Admin workstation is an Ubuntu desktop (not a Mac); droplet SSH key `~/.ssh/finance_ed25519`.
   Domain: `brookshear.party` (Cloudflare Registrar, paid to 2028-10-03); SSH hostname `ssh.brookshear.party`.
-- Next: deploy sync early (balance history starts accruing) → web UI (search,
-  monthly spending, net worth) → MCP server.
+- Web UI (read-only: search, monthly spending, net worth) runs locally via `make dev`
+  (http://<dev box>:8080, demo data, Access check off). Not deployed yet.
+- Next: deploy sync early (balance history starts accruing) → deploy web (socket,
+  Access app, signing-key refresh timer) → MCP server.
 
 ## Commands
 - `make setup` / `make test` (throwaway Postgres in Docker) / `make dev` / `make demo-claim`
