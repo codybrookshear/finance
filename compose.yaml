@@ -14,7 +14,7 @@ x-hardening: &hardening
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
     restart: unless-stopped
     environment:
       POSTGRES_USER: finance_owner
@@ -23,7 +23,9 @@ services:
       TZ: America/Los_Angeles
     secrets: [postgres_owner_password, finance_sync_db_password, finance_web_db_password]
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # Postgres 18 images keep data in /var/lib/postgresql/18/docker; mounting
+      # the parent keeps it in the volume across major-version upgrades.
+      - pgdata:/var/lib/postgresql
       - ./db/init:/docker-entrypoint-initdb.d:ro
     networks: [db]            # internal only; no ports published
     security_opt: ["no-new-privileges:true"]

@@ -19,7 +19,9 @@ Single user (me). Security is the top priority; prefer fewer dependencies.
   `scripts/secrets-write.sh` writes each one to a file in a private dir (RAM locally);
   compose mounts them as file-backed secrets under /run/secrets, never env vars
   (env-sourced Compose secrets don't work with read_only services).
-- Images: GHCR, built by GitHub Actions.
+- Images: built on the workstation from the committed HEAD (`git archive`) and copied over
+  SSH by `scripts/sync-deploy.sh`. The repo is private, so there's no registry and no
+  GitHub token on the droplet. Postgres is the only pulled image (digest-pinned).
 
 ## Security invariants (don't break these)
 - SimpleFIN access URL is held only by the `sync` container; never logged or put in errors.
@@ -47,8 +49,10 @@ Single user (me). Security is the top priority; prefer fewer dependencies.
 - Web UI (search, monthly net income/spending, net worth, categorization + rules,
   transfer detection) runs locally via `make dev`
   (http://<dev box>:8080, demo data, Access check off). Not deployed yet.
-- Next: deploy sync early (balance history starts accruing) → deploy web (socket,
-  Access app, signing-key refresh timer) → MCP server.
+- Postgres 18 (volume mounted at /var/lib/postgresql). Sync deploy tooling ready
+  (`deploy/finance/README.md`): systemd timer 4×/day, secrets in /etc/finance/secrets.
+- Next: first sync deploy → category suggestions from history (pg_trgm) → deploy web
+  (socket, Access app, signing-key refresh timer) → MCP server.
 
 ## Commands
 - `make setup` / `make test` (throwaway Postgres in Docker) / `make dev` / `make demo-claim`

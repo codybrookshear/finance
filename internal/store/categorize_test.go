@@ -78,7 +78,7 @@ func TestCategorize(t *testing.T) {
 		category_source = 'manual' WHERE id = 'mine'`)
 	exec(`INSERT INTO rules (pattern, field, category_id, priority) VALUES
 		('grocery', 'description', (SELECT id FROM categories WHERE name = 'Groceries'), 100),
-		('netflix', 'payee', (SELECT id FROM categories WHERE name = 'Subscriptions'), 50)`)
+		('netflix', 'payee', (SELECT id FROM categories WHERE name = 'Entertainment'), 50)`)
 
 	type state struct {
 		category string
@@ -113,8 +113,8 @@ func TestCategorize(t *testing.T) {
 	}
 	check(map[string]state{
 		"groc":     {"Groceries", "rule", false},
-		"both":     {"Subscriptions", "rule", false}, // priority 50 beats 100
-		"flix":     {"Subscriptions", "rule", false},
+		"both":     {"Entertainment", "rule", false}, // priority 50 beats 100
+		"flix":     {"Entertainment", "rule", false},
 		"mine":     {"Dining", "manual", false}, // rules never override you
 		"pay-out":  {"Transfer", "auto", true},
 		"pay-in":   {"Transfer", "auto", true},

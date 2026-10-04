@@ -42,7 +42,7 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		Location:           time.UTC,
-		Window:             89 * 24 * time.Hour,
+		Window:             45 * 24 * time.Hour, // SimpleFIN's recommended maximum range
 		Overlap:            5 * 24 * time.Hour,
 		MaxBackfillPerRun:  3,
 		MaxLookback:        3 * 365 * 24 * time.Hour,

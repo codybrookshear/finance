@@ -75,7 +75,8 @@ make dev              # postgres + migrate + one sync pass
 
 Each run: one incremental fetch (last success − 5 days → now, including pending)
 that also records each account's balance for today, then up to 3 backfill requests
-walking back in 89-day windows until two windows come back empty or 3 years is reached.
+walking back in 45-day windows (SimpleFIN's recommended maximum) until two windows come back
+empty or 3 years is reached.
 At ~4 runs/day that stays under SimpleFIN Bridge's ~24 requests/day guidance.
 
 - Pending transactions that disappear (posted under a new ID, or voided) are removed.

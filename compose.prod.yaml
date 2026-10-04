@@ -1,0 +1,18 @@
+# Production overrides, on the droplet (/opt/finance; its .env selects this
+# file). Images are built on the workstation from a committed revision and
+# loaded over SSH by scripts/sync-deploy.sh, so nothing is built here and the
+# only image pulled from a registry is the digest-pinned Postgres.
+services:
+  migrate:
+    build: !reset null
+    image: finance-migrate:${FINANCE_VERSION:?}
+    pull_policy: never
+  sync:
+    build: !reset null
+    image: finance-sync:${FINANCE_VERSION:?}
+    pull_policy: never
+  web:
+    build: !reset null
+    image: finance-web:${FINANCE_VERSION:?}
+    pull_policy: never
+    profiles: [web]   # not deployed yet

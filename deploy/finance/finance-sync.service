@@ -1,0 +1,23 @@
+# One SimpleFIN sync pass, started by finance-sync.timer. scripts/sync-install.sh
+# installs this as /etc/systemd/system/finance-sync.service.
+#
+# `compose run` also starts what sync depends on: Postgres (if it isn't
+# running) and the migrate container. Output goes to the journal:
+#   sudo journalctl -u finance-sync
+
+[Unit]
+Description=Finance: one SimpleFIN sync pass
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/finance
+ExecStart=/usr/bin/docker compose run --rm sync
+TimeoutStartSec=15min
+# This unit only drives the Docker CLI (which talks to dockerd as root), so
+# sandboxing it buys little; keep the basics.
+PrivateTmp=yes
+ProtectHome=yes
+NoNewPrivileges=yes

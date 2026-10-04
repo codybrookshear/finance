@@ -21,7 +21,7 @@ docker run -d --name "$NAME" -p 127.0.0.1:$PORT:5432 \
   -e POSTGRES_HOST_AUTH_METHOD=trust \
   -v "$PWD/db/init:/docker-entrypoint-initdb.d:ro" \
   -v "$SECRETS:/run/secrets:ro" \
-  postgres:16-alpine >/dev/null
+  postgres:18-alpine >/dev/null
 
 printf 'waiting for postgres'
 for _ in $(seq 1 60); do

@@ -132,6 +132,7 @@ func TestSyncEndToEnd(t *testing.T) {
 	cfg.Location = la
 	cfg.Now = func() time.Time { return clock }
 	cfg.MaxLookback = 400 * day
+	cfg.Window = 89 * day // the scenario below is sized for 89-day windows, whatever the default
 	s := &Syncer{Store: &store.Store{Pool: pool}, Client: bank, Cfg: cfg,
 		Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 
