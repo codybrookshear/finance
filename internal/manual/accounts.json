@@ -1,1 +1,10 @@
-[]
+[
+  {
+    "id": "home",
+    "name": "Home",
+    "group": "Real estate",
+    "value": "500000.00",
+    "as_of": "2026-10-03",
+    "note": "Zillow Zestimate"
+  }
+]
