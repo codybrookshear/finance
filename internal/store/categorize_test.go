@@ -200,24 +200,32 @@ func TestMarkDuplicateAccounts(t *testing.T) {
 		`INSERT INTO connections (id, name, org_url) VALUES
 			('v1', 'Login A', 'https://invest.example.com'),
 			('v2', 'Login B', 'https://www.invest.example.com/login'),
-			('b1', 'Bank One', ''), ('b2', 'Bank Two', ''), ('c1', 'Chase', 'https://chase.com')`,
-		`INSERT INTO accounts (id, connection_id, name, balance, created_at) VALUES
-			('joint-a', 'v1', 'Brokerage (1234)', 5000, now() - interval '2 hours'),
-			('joint-b', 'v2', 'Brokerage (1234)', 5001, now()),     -- same bank: balance may differ
-			('sav-1',   'b1', 'Savings', 100, now() - interval '1 hour'),
-			('sav-2',   'b2', 'Savings', 100, now()),               -- no bank URL: same non-zero balance
-			('empty-1', 'b1', 'Checking', 0, now() - interval '1 hour'),
-			('empty-2', 'b2', 'Checking', 0, now()),                -- zero balances prove nothing
-			('chk-1',   'v1', 'Checking', 0, now()),
-			('chk-2',   'c1', 'Checking', 0, now())                 -- different banks`,
+			('b1', 'Bank One', ''), ('b2', 'Bank Two', ''), ('c1', 'Chase', 'https://chase.com'),
+			('v1:invest.example.com', 'Example Invest', 'invest.example.com')`,
+		`INSERT INTO accounts (id, connection_id, org_name, name, balance, created_at) VALUES
+			('joint-a', 'v1', 'Example Invest', 'Brokerage (1234)', 5000, now() - interval '2 hours'),
+			('joint-b', 'v2', 'Example Invest', 'Brokerage (1234)', 5001, now()),     -- same bank: balance may differ
+			('sav-1',   'b1', 'Bank One', 'Savings', 100, now() - interval '1 hour'),
+			('sav-2',   'b2', 'Bank Two', 'Savings', 100, now()),               -- no bank URL: same non-zero balance
+			('empty-1', 'b1', 'Bank One', 'Checking', 0, now() - interval '1 hour'),
+			('empty-2', 'b2', 'Bank Two', 'Checking', 0, now()),                -- zero balances prove nothing
+			('chk-1',   'v1', 'Example Invest', 'Checking', 0, now()),
+			('chk-2',   'c1', 'Chase', 'Checking', 0, now()),                   -- different banks
+			-- SimpleFIN's older format: two logins share one connection (keyed on the
+			-- bank's domain, org_url without a scheme) and differ only in org name.
+			('old-a', 'v1:invest.example.com', 'Login A', 'Joint (1234)', 12345.67, now()),
+			('old-b', 'v1:invest.example.com', 'Login B', 'Joint (1234)', 12345.67, now()),
+			-- One login with two same-named accounts isn't a duplicate.
+			('same-1', 'c1', 'Chase', 'Card', 10, now()),
+			('same-2', 'c1', 'Chase', 'Card', 10, now())`,
 	} {
 		if _, err := owner.Exec(ctx, sql); err != nil {
 			t.Fatalf("%s: %v", sql, err)
 		}
 	}
 	st := &Store{Pool: syncPool} // the sync role can do this
-	if n, err := st.MarkDuplicateAccounts(ctx); err != nil || n != 2 {
-		t.Fatalf("marked %d (%v), want 2", n, err)
+	if n, err := st.MarkDuplicateAccounts(ctx); err != nil || n != 3 {
+		t.Fatalf("marked %d (%v), want 3", n, err)
 	}
 	dups := map[string]string{}
 	rows, _ := owner.Query(ctx, `SELECT id, coalesce(duplicate_of, '') FROM accounts`)
@@ -227,7 +235,8 @@ func TestMarkDuplicateAccounts(t *testing.T) {
 		dups[id] = of
 	}
 	for id, want := range map[string]string{"joint-b": "joint-a", "sav-2": "sav-1", "joint-a": "", "sav-1": "",
-		"empty-1": "", "empty-2": "", "chk-1": "", "chk-2": ""} {
+		"empty-1": "", "empty-2": "", "chk-1": "", "chk-2": "",
+		"old-b": "old-a", "old-a": "", "same-1": "", "same-2": ""} {
 		if dups[id] != want {
 			t.Errorf("%s: duplicate_of = %q, want %q", id, dups[id], want)
 		}
