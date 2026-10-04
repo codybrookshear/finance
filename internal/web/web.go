@@ -1,5 +1,5 @@
-// Package web is the read-only UI: transaction search, monthly spending and
-// net worth, server-rendered with html/template plus vendored htmx and uPlot.
+// Package web is the UI: transaction search and categorizing, monthly
+// spending, and accounts with net worth, server-rendered with html/template plus vendored htmx and uPlot.
 package web
 
 import (
@@ -57,7 +57,7 @@ func New(cfg Config) (*Server, error) {
 	}
 	s := &Server{cfg: cfg, static: http.FileServerFS(staticFS), version: version}
 	s.pages = map[string]*template.Template{}
-	for _, page := range []string{"transactions", "spending", "networth"} {
+	for _, page := range []string{"transactions", "spending", "accounts"} {
 		t, err := template.New("layout.html").Funcs(s.funcs()).
 			ParseFS(files, "templates/layout.html", "templates/"+page+".html")
 		if err != nil {
@@ -79,7 +79,10 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("GET /transactions", s.transactions)
 	mux.HandleFunc("GET /spending", s.spending)
-	mux.HandleFunc("GET /networth", s.networth)
+	mux.HandleFunc("GET /accounts", s.accounts)
+	mux.HandleFunc("GET /networth", func(w http.ResponseWriter, r *http.Request) { // the page's old name
+		http.Redirect(w, r, "/accounts", http.StatusMovedPermanently)
+	})
 	mux.HandleFunc("POST /transactions/category", s.setCategory)
 	mux.HandleFunc("POST /transactions/note", s.setNote)
 	mux.HandleFunc("GET /categories.css", s.categoriesCSS)

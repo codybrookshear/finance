@@ -86,7 +86,7 @@ func TestAccessRequiredEverywhere(t *testing.T) {
 	}
 	h := srv.Handler()
 
-	for _, p := range []string{"/", "/transactions", "/spending", "/networth", "/categories.css", "/static/app.js", "/nope"} {
+	for _, p := range []string{"/", "/transactions", "/spending", "/accounts", "/networth", "/categories.css", "/static/app.js", "/nope"} {
 		res := get(t, h, p)
 		if res.StatusCode != http.StatusForbidden {
 			t.Errorf("GET %s without a token: %d, want 403", p, res.StatusCode)
@@ -337,8 +337,16 @@ func TestPages(t *testing.T) {
 		}
 	})
 
-	t.Run("net worth", func(t *testing.T) {
-		b := page("/networth")
+	t.Run("accounts", func(t *testing.T) {
+		if res := get(t, h, "/networth"); res.StatusCode != http.StatusMovedPermanently || res.Header.Get("Location") != "/accounts" {
+			t.Errorf("old /networth: %d %s", res.StatusCode, res.Header.Get("Location"))
+		}
+		b := page("/accounts")
+		for _, want := range []string{"<h1>Accounts</h1>", `<p class="label">Net worth</p>`, `aria-current="page">Accounts</a>`} {
+			if !strings.Contains(b, want) {
+				t.Errorf("missing %q", want)
+			}
+		}
 		// Current: 1000.50 + (-250.25); the hidden account doesn't count.
 		for _, want := range []string{"$750.25", "Checking", "−$250.25", `id="networth-chart"`,
 			`<li class="group">`, `<span class="what">Test Bank</span>`,

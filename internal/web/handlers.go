@@ -185,7 +185,7 @@ func (s *Server) spending(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "spending", "layout.html", p)
 }
 
-func (s *Server) networth(w http.ResponseWriter, r *http.Request) {
+func (s *Server) accounts(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	p := struct {
 		base
@@ -215,11 +215,11 @@ func (s *Server) networth(w http.ResponseWriter, r *http.Request) {
 		}
 		p.ChartDays, p.ChartValues = strings.Join(days, ","), strings.Join(vals, ",")
 	}
-	if p.base, err = s.base(r, "networth"); err != nil {
+	if p.base, err = s.base(r, "accounts"); err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	s.render(w, r, "networth", "layout.html", p)
+	s.render(w, r, "accounts", "layout.html", p)
 }
 
 // parseDay reads a YYYY-MM-DD date as local midnight.
