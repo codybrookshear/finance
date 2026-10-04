@@ -20,6 +20,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"finance/internal/manual"
 	"finance/internal/simplefin"
 	"finance/internal/store"
 )
@@ -30,12 +31,13 @@ type Fetcher interface {
 }
 
 type Config struct {
-	Location           *time.Location // for daily balance snapshots
-	Window             time.Duration  // per-request date range; must be < 90 days
-	Overlap            time.Duration  // re-fetch this much before last success
-	MaxBackfillPerRun  int            // backfill requests per run
-	MaxLookback        time.Duration  // stop backfilling past this age
-	EmptyWindowsToStop int            // consecutive empty windows that end backfill
+	Location           *time.Location   // for daily balance snapshots
+	Window             time.Duration    // per-request date range; must be < 90 days
+	Overlap            time.Duration    // re-fetch this much before last success
+	MaxBackfillPerRun  int              // backfill requests per run
+	MaxLookback        time.Duration    // stop backfilling past this age
+	EmptyWindowsToStop int              // consecutive empty windows that end backfill
+	Manual             []manual.Account // balances kept by hand (internal/manual)
 	Now                func() time.Time
 }
 
@@ -124,6 +126,9 @@ func (s *Syncer) run(ctx context.Context, res *Result) error {
 	if st.BackfillBefore == nil {
 		st.BackfillBefore = &start
 	}
+	if err := s.writeManual(ctx, now); err != nil {
+		return err
+	}
 	if err := s.Store.SaveState(ctx, st); err != nil {
 		return fmt.Errorf("save state: %w", err)
 	}
@@ -158,6 +163,34 @@ func (s *Syncer) run(ctx context.Context, res *Result) error {
 		s.Log.Info("backfill complete", "oldest_window_start", st.BackfillBefore)
 	}
 	return nil
+}
+
+// writeManual writes the balances kept by hand like bank accounts
+// ("manual:<id>", no connection), with today's balance snapshot, so they
+// count in net worth and appear on the chart.
+func (s *Syncer) writeManual(ctx context.Context, now time.Time) error {
+	if len(s.Cfg.Manual) == 0 {
+		return nil
+	}
+	return s.Store.Tx(ctx, func(tx pgx.Tx) error {
+		for _, m := range s.Cfg.Manual {
+			asOf, err := time.ParseInLocation(time.DateOnly, m.AsOf, s.Cfg.Location)
+			if err != nil {
+				return fmt.Errorf("manual account %s: %w", m.ID, err)
+			}
+			id := "manual:" + m.ID
+			if _, err := store.UpsertAccount(ctx, tx, store.Account{
+				ID: id, OrgName: m.Group, Name: m.Name, Currency: "USD",
+				Balance: m.Value, BalanceAt: asOf, UpdateBalance: true,
+			}); err != nil {
+				return fmt.Errorf("manual account %s: %w", m.ID, err)
+			}
+			if err := store.UpsertSnapshot(ctx, tx, id, now.In(s.Cfg.Location), m.Value, nil, asOf); err != nil {
+				return fmt.Errorf("manual account %s: %w", m.ID, err)
+			}
+		}
+		return nil
+	})
 }
 
 // fetchAndStore fetches [start, end) and writes it. With current=true it

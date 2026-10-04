@@ -71,6 +71,14 @@ make demo-claim       # access URL → 1Password simplefin-demo/access_url
 make dev              # postgres + migrate + one sync pass
 ```
 
+## Balances kept by hand
+
+Things SimpleFIN can't see, like your home's estimated value, go in
+`internal/manual/accounts.json` (format in `internal/manual/manual.go`; a debt
+is a negative value). Commit and run `scripts/deploy.sh`: each sync writes
+them like bank accounts, so they count in net worth and get a daily balance
+snapshot. A typo stops the sync rather than writing a wrong number.
+
 ## How sync works
 
 Each run: one incremental fetch (last success − 5 days → now, including pending)

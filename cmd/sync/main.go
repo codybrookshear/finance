@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"finance/internal/config"
+	"finance/internal/manual"
 	"finance/internal/simplefin"
 	"finance/internal/store"
 	"finance/internal/syncer"
@@ -62,6 +63,9 @@ func run(ctx context.Context, log *slog.Logger) error {
 
 	cfg := syncer.DefaultConfig()
 	if cfg.Location, err = config.Location("FINANCE_TZ"); err != nil {
+		return err
+	}
+	if cfg.Manual, err = manual.Accounts(); err != nil {
 		return err
 	}
 	if cfg.MaxBackfillPerRun, err = config.Int("SYNC_MAX_BACKFILL_REQUESTS", cfg.MaxBackfillPerRun); err != nil {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"finance/internal/manual"
 	"finance/internal/simplefin"
 	"finance/internal/store"
 )
@@ -315,5 +316,38 @@ func TestNewAccountGetsHistory(t *testing.T) {
 	}
 	if n := count(t, pool, `SELECT count(*) FROM transactions WHERE account_id = 'S1'`); n != 3 {
 		t.Errorf("second bank has %d transactions after one sync, want all 3", n)
+	}
+}
+
+// Balances kept by hand are written like bank accounts, with a snapshot.
+func TestManualAccounts(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	la, _ := time.LoadLocation("America/Los_Angeles")
+	clock = time.Date(2026, 10, 2, 18, 0, 0, 0, time.UTC)
+	cfg := DefaultConfig()
+	cfg.Location = la
+	cfg.Now = func() time.Time { return clock }
+	cfg.Manual = []manual.Account{{ID: "home", Name: "Home", Group: "Real estate", Value: "650000.00", AsOf: "2026-09-30"}}
+	s := &Syncer{Store: &store.Store{Pool: pool}, Client: &fakeBank{balance: "1.00"}, Cfg: cfg,
+		Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	if _, err := s.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(t, pool, `SELECT count(*) FROM accounts WHERE id = 'manual:home' AND name = 'Home'
+		AND org_name = 'Real estate' AND balance = 650000 AND connection_id IS NULL`); n != 1 {
+		t.Error("manual account not written")
+	}
+	if n := count(t, pool, `SELECT count(*) FROM balance_snapshots
+		WHERE account_id = 'manual:home' AND as_of = '2026-10-02' AND balance = 650000`); n != 1 {
+		t.Error("no snapshot for today")
+	}
+	// A new value replaces the old one.
+	s.Cfg.Manual[0].Value = "655000"
+	if _, err := s.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(t, pool, `SELECT count(*) FROM accounts WHERE id = 'manual:home' AND balance = 655000`); n != 1 {
+		t.Error("value not updated")
 	}
 }

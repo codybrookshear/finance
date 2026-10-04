@@ -50,7 +50,8 @@ Single user (me). Security is the top priority; prefer fewer dependencies.
   Domain: `brookshear.party` (Cloudflare Registrar, paid to 2028-10-03); SSH hostname `ssh.brookshear.party`.
 - Sync deployed to the droplet (2026-10-03), timer every 3 hours.
 - Web UI (search, monthly net income/spending, net worth, categorization with learned
-  guesses, transfer detection) runs locally via `make dev`
+  guesses, transfer detection; joint accounts shown once; manual balances such as the
+  house value from internal/manual/accounts.json) runs locally via `make dev`
   (http://<dev box>:8080, demo data, Access check off). Not deployed yet.
 - Postgres 18 (volume mounted at /var/lib/postgresql). Deploy: `scripts/deploy.sh`
   (`deploy/finance/README.md`); secrets in /etc/finance/secrets.
