@@ -10,9 +10,9 @@
   {
     "id": "employer-401k",
     "name": "Retirement 401(k)",
-    "group": "Example Retirement",
+    "group": "Employer plan",
     "value": "25000.00",
     "as_of": "2026-10-04",
-    "note": "Example Retirement balance, entered by hand"
+    "note": "Plan website, entered by hand"
   }
 ]

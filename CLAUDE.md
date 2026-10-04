@@ -15,6 +15,8 @@ Single user (me). Security is the top priority; prefer fewer dependencies.
   scripts/CDNs, strict CSP, `Cache-Control: no-store`. Passkey login as inner layer.
 - MCP: local Go server on my Mac (official MCP Go SDK) calling /api with a Cloudflare
   Access service token kept in macOS Keychain. Read-only tools.
+- Personal values (manual balances, the Access email allowlist) also live in 1Password
+  (finance-prod-config), never in the repo: it's public.
 - Secrets: 1Password is the source of truth; env/*.env hold only op:// refs.
   `scripts/secrets-write.sh` writes each one to a file in a private dir (RAM locally);
   compose mounts them as file-backed secrets under /run/secrets, never env vars
@@ -51,7 +53,7 @@ Single user (me). Security is the top priority; prefer fewer dependencies.
 - Sync deployed to the droplet (2026-10-03), timer every 3 hours.
 - Web UI (search, monthly net income/spending, net worth, categorization with learned
   guesses, transfer detection; joint accounts shown once; manual balances such as the
-  house value from internal/manual/accounts.json) runs locally via `make dev`
+  house value) runs locally via `make dev`
   (http://<dev box>:8080, demo data, Access check off). Not deployed yet.
 - Postgres 18 (volume mounted at /var/lib/postgresql). Deploy: `scripts/deploy.sh`
   (`deploy/finance/README.md`); secrets in /etc/finance/secrets.

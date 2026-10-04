@@ -11,6 +11,9 @@ services:
     build: !reset null
     image: finance-sync:${FINANCE_VERSION:?}
     pull_policy: never
+    environment:
+      MANUAL_ACCOUNTS_FILE: /run/secrets/manual_accounts   # balances kept by hand (internal/manual)
+    secrets: [manual_accounts]
   # Serves a Unix socket in /run/finance-web for cloudflared (on the host) and
   # checks the Cloudflare Access login on every request, against signing keys
   # the finance-access-keys timer keeps in /etc/finance/access.
@@ -23,8 +26,16 @@ services:
       ACCESS_TEAM_DOMAIN: brookshear.cloudflareaccess.com
       # The Access app's AUD tag. Not secret: Access puts it in every login redirect.
       ACCESS_AUD: b377e7a1a9610f5cdcee7a0e963246fcc766318ca878d025f34aa117626aa53c  # gitleaks:allow
-      ACCESS_ALLOWED_EMAILS: you@example.com
+      ACCESS_ALLOWED_EMAILS_FILE: /run/secrets/access_allowed_emails
       ACCESS_CERTS_FILE: /run/access/certs.json
+    secrets: [access_allowed_emails]
     volumes:
       - /run/finance-web:/run/web
       - /etc/finance/access:/run/access:ro
+
+# Personal values from 1Password (env/prod.env), written by scripts/deploy.sh.
+secrets:
+  manual_accounts:
+    file: ${FINANCE_SECRETS_DIR:?}/manual_accounts
+  access_allowed_emails:
+    file: ${FINANCE_SECRETS_DIR:?}/access_allowed_emails

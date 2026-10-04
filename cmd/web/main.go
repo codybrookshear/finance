@@ -9,7 +9,7 @@
 //
 //	ACCESS_TEAM_DOMAIN     <team>.cloudflareaccess.com
 //	ACCESS_AUD             the Access application's AUD tag
-//	ACCESS_ALLOWED_EMAILS  comma-separated
+//	ACCESS_ALLOWED_EMAILS  comma-separated (or ACCESS_ALLOWED_EMAILS_FILE)
 //	ACCESS_CERTS_FILE      Access's signing keys (JSON), kept fresh by the host
 //
 // WEB_DEV_EMAIL instead skips Access and treats every request as that user.
@@ -129,8 +129,10 @@ func accessFromEnv() (*web.Access, error) {
 	team := os.Getenv("ACCESS_TEAM_DOMAIN")
 	aud := os.Getenv("ACCESS_AUD")
 	certs := os.Getenv("ACCESS_CERTS_FILE")
+	// ACCESS_ALLOWED_EMAILS_FILE in production: kept in 1Password, out of the repo.
+	allowed, _ := config.Secret("ACCESS_ALLOWED_EMAILS")
 	var emails []string
-	for _, e := range strings.Split(os.Getenv("ACCESS_ALLOWED_EMAILS"), ",") {
+	for _, e := range strings.Split(allowed, ",") {
 		if e = strings.ToLower(strings.TrimSpace(e)); e != "" {
 			emails = append(emails, e)
 		}

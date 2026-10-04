@@ -73,11 +73,13 @@ make dev              # postgres + migrate + one sync pass
 
 ## Balances kept by hand
 
-Things SimpleFIN can't see, like your home's estimated value, go in
-`internal/manual/accounts.json` (format in `internal/manual/manual.go`; a debt
-is a negative value). Commit and run `scripts/deploy.sh`: each sync writes
-them like bank accounts, so they count in net worth and get a daily balance
-snapshot. A typo stops the sync rather than writing a wrong number.
+Things SimpleFIN can't see, like your home's estimated value, are a JSON list
+(see `deploy/finance/manual-accounts.example.json`; a debt is a negative value)
+kept in 1Password, not the repo: item `finance-prod-config`, field
+`manual_accounts`, created once with `scripts/prod-config-create.sh`. Edit it
+there and run `scripts/deploy.sh`: each sync writes them like bank accounts,
+so they count in net worth and get a daily balance snapshot. A typo stops the
+sync rather than writing a wrong number.
 
 ## How sync works
 

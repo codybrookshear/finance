@@ -65,8 +65,10 @@ func run(ctx context.Context, log *slog.Logger) error {
 	if cfg.Location, err = config.Location("FINANCE_TZ"); err != nil {
 		return err
 	}
-	if cfg.Manual, err = manual.Accounts(); err != nil {
-		return err
+	if p := os.Getenv("MANUAL_ACCOUNTS_FILE"); p != "" { // production: from 1Password
+		if cfg.Manual, err = manual.Load(p); err != nil {
+			return err
+		}
 	}
 	if cfg.MaxBackfillPerRun, err = config.Int("SYNC_MAX_BACKFILL_REQUESTS", cfg.MaxBackfillPerRun); err != nil {
 		return err
