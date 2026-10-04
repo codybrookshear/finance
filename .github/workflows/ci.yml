@@ -24,7 +24,7 @@ jobs:
       OWNER: postgres://finance_owner@127.0.0.1:5432/finance?sslmode=disable
     steps:
       # Tip: pin actions to full commit SHAs; Dependabot keeps them updated.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { persist-credentials: false }
       - uses: actions/setup-go@v5
         with: { go-version-file: go.mod }
