@@ -86,7 +86,7 @@ docker compose up --detach web
 code=""
 for _ in $(seq 1 20); do
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 --unix-socket "$SOCKET" \
-    http://finance.brookshear.party/transactions || true)"
+    http://localhost/transactions || true)"
   [[ "$code" == 403 ]] && break
   sleep 1
 done

@@ -11,8 +11,7 @@
 # 1Password (never written to disk here), and runs scripts/deploy-install.sh
 # with sudo there. (cloudflared's config is deployed separately, by
 # scripts/tunnel-deploy.sh.)
-# The repo is private, so there's no registry: the droplet needs no GitHub
-# credentials.
+# No registry, so the droplet needs no registry credentials.
 
 # $dir (a validated remote temp path) is meant to expand locally, before ssh sends it.
 # shellcheck disable=SC2029

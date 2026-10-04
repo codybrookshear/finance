@@ -1,12 +1,12 @@
 # The app on the droplet
 
 Postgres, the SimpleFIN sync on a systemd timer (`finance-sync.timer`, every
-3 hours), and the web UI at `finance.brookshear.party`.
+3 hours), and the web UI at `finance.<your-domain>`.
 
 **Design choices.**
 - Images are built on your workstation from the committed HEAD and copied over
-  SSH. The repo is private, so this avoids keeping a registry token on the
-  droplet. The only image the droplet pulls is the digest-pinned Postgres.
+  SSH, so there's no registry and no registry token on the droplet. The only
+  image the droplet pulls is the digest-pinned Postgres.
 - Secrets go straight from 1Password (`env/prod.env` refs) to
   `/etc/finance/secrets` (directory root 0700). Compose mounts each container's
   secrets as files under `/run/secrets`.
@@ -34,8 +34,8 @@ On your workstation, signed in to 1Password (`eval "$(op signin)"`):
    - Access controls → Applications → Create → Self-hosted, hostname
      `finance.<your-domain>`, your Allow policy, a login method.
    - DNS: CNAME `finance` → `<tunnel-id>.cfargotunnel.com`, proxied.
-   - Fill in `REPLACE_ME_WEB_AUD` (in `compose.prod.yaml` and
-     `deploy/cloudflared/config.yml`; the redirect trick in
+   - Put the app's AUD tag in `compose.prod.yaml` (`ACCESS_AUD`) and in
+     `deploy/cloudflared/config.yml` (the `finance.` rule; the redirect trick in
      `deploy/cloudflared/README.md` finds it), and commit.
 5. `scripts/deploy.sh`. It asks for your sudo password once, runs a first
    sync, enables the timers, starts the web app and checks it refuses requests
@@ -44,8 +44,8 @@ On your workstation, signed in to 1Password (`eval "$(op signin)"`):
 
 The first syncs backfill history 45 days at a time, 2 windows per run, so it
 fills in over a day or two. A bank connected later gets its history the same
-way, starting with the first sync that sees it. Balance history (for net worth) starts with the
-first sync.
+way, starting with the first sync that sees it. Balance history (for net
+worth) starts with the first sync.
 
 ## Day to day
 

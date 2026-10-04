@@ -22,8 +22,8 @@ Single user (me). Security is the top priority; prefer fewer dependencies.
   compose mounts them as file-backed secrets under /run/secrets, never env vars
   (env-sourced Compose secrets don't work with read_only services).
 - Images: built on the workstation from the committed HEAD (`git archive`) and copied over
-  SSH by `scripts/deploy.sh`. The repo is private, so there's no registry and no
-  GitHub token on the droplet. Postgres is the only pulled image (digest-pinned).
+  SSH by `scripts/deploy.sh`: no registry, and no registry token on the droplet.
+  Postgres is the only pulled image (digest-pinned).
 
 ## Security invariants (don't break these)
 - SimpleFIN access URL is held only by the `sync` container; never logged or put in errors.
@@ -53,11 +53,11 @@ Single user (me). Security is the top priority; prefer fewer dependencies.
 - Sync deployed to the droplet (2026-10-03), timer every 3 hours.
 - Web UI (search, monthly net income/spending, net worth, categorization with learned
   guesses, transfer detection; joint accounts shown once; manual balances such as the
-  house value) runs locally via `make dev`
-  (http://<dev box>:8080, demo data, Access check off). Not deployed yet.
+  house value) deployed at `finance.brookshear.party` behind Access (2026-10-03).
+  Locally: `make dev` (http://<dev box>:8080, demo data, Access check off).
 - Postgres 18 (volume mounted at /var/lib/postgresql). Deploy: `scripts/deploy.sh`
   (`deploy/finance/README.md`); secrets in /etc/finance/secrets.
-- Next: deploy web (socket, Access app, signing-key refresh timer) → MCP server.
+- Next: make the repo public (history rewrite to drop personal values) → MCP server.
 
 ## Commands
 - `make setup` / `make test` (throwaway Postgres in Docker) / `make dev` / `make demo-claim`
