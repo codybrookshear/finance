@@ -1,5 +1,5 @@
-// The app's only script (htmx aside): draws the net worth chart and keeps the
-// transaction date filter a valid range.
+// The app's only script (htmx aside): draws the net worth chart, keeps the
+// transaction date filter a valid range, and makes iPhone's date "Reset" clear it.
 //
 // Chart data comes from data-* attributes (never inline script), as
 // comma-separated days (YYYY-MM-DD) and decimal strings. Converting to Number
@@ -42,9 +42,30 @@
 
   document.addEventListener("DOMContentLoaded", drawNetWorth);
 
-  // Keep the date filter a valid range: moving one end past the other moves
-  // the other end too. Runs in the capture phase, so the values are fixed
-  // before htmx (listening on the form) sends the search.
+  // Date filter. Each field remembers the value last searched for (data-sent).
+  //
+  // iPhone Safari's picker has "Reset" rather than "Clear": it restores the
+  // field's default value (the one the page loaded with) and may not fire
+  // "change". So the default is made empty, and a field that loses focus
+  // with an unsearched value fires "change" itself.
+  document.addEventListener("DOMContentLoaded", () => {
+    for (const el of document.querySelectorAll('input[type="date"]')) {
+      const v = el.value;
+      el.defaultValue = "";
+      el.value = v;
+      el.dataset.sent = v;
+    }
+  });
+  document.addEventListener("blur", (e) => {
+    const el = e.target;
+    if (el instanceof HTMLInputElement && el.type === "date" && el.value !== el.dataset.sent) {
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  }, true);
+
+  // Keep the range valid: moving one end past the other moves the other end
+  // too. Capture phase, so the values are fixed before htmx (listening on the
+  // form) sends the search.
   document.addEventListener("change", (e) => {
     const el = e.target;
     if (!(el instanceof HTMLInputElement) || el.type !== "date" || !el.form) return;
@@ -57,5 +78,7 @@
     }
     to.min = from.value;
     from.max = to.value;
+    from.dataset.sent = from.value;
+    to.dataset.sent = to.value;
   }, true);
 })();
