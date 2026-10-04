@@ -60,6 +60,7 @@ type Syncer struct {
 
 type Result struct {
 	Requests     int
+	NewAccounts  int // accounts seen for the first time
 	TxnsSeen     int
 	StaleDeleted int
 	Snapshots    int
@@ -113,6 +114,13 @@ func (s *Syncer) run(ctx context.Context, res *Result) error {
 		return err
 	}
 	st.LastSuccessAt = &now
+	if res.NewAccounts > 0 && st.BackfillBefore != nil {
+		// A bank connected since the last run only got the window above: walk
+		// back again so its history comes in too. Re-fetching the other
+		// accounts' history is harmless (upserts; user fields untouched).
+		st.BackfillDone, st.BackfillEmptyRuns, st.BackfillBefore = false, 0, &start
+		s.Log.Info("new account: restarting backfill", "new_accounts", res.NewAccounts)
+	}
 	if st.BackfillBefore == nil {
 		st.BackfillBefore = &start
 	}
@@ -208,12 +216,16 @@ func (s *Syncer) fetchAndStore(ctx context.Context, res *Result, start, end time
 			if a.BalanceDate.IsZero() {
 				balAt = s.Cfg.Now().UTC()
 			}
-			if err := store.UpsertAccount(ctx, tx, store.Account{
+			inserted, err := store.UpsertAccount(ctx, tx, store.Account{
 				ID: a.ID, ConnectionID: connID, OrgName: orgName, Name: a.Name,
 				Currency: defaultStr(a.Currency, "USD"), Balance: string(a.Balance),
 				AvailableBalance: avail, BalanceAt: balAt, UpdateBalance: current,
-			}); err != nil {
+			})
+			if err != nil {
 				return fmt.Errorf("account %s: %w", a.ID, err)
+			}
+			if inserted {
+				res.NewAccounts++
 			}
 
 			seen := make([]string, 0, len(a.Transactions))

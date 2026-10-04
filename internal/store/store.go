@@ -71,13 +71,14 @@ type Account struct {
 	UpdateBalance                             bool // false during backfill-only fetches
 }
 
-func UpsertAccount(ctx context.Context, tx pgx.Tx, a Account) error {
+// UpsertAccount reports whether the account is new (inserted, not updated).
+func UpsertAccount(ctx context.Context, tx pgx.Tx, a Account) (inserted bool, err error) {
 	var connID *string
 	if a.ConnectionID != "" {
 		connID = &a.ConnectionID
 	}
 	// Only sync-owned columns are updated; user fields (display_name, kind, ...) are left alone.
-	_, err := tx.Exec(ctx, `INSERT INTO accounts (id, connection_id, org_name, name, currency, balance, available_balance, balance_at)
+	err = tx.QueryRow(ctx, `INSERT INTO accounts (id, connection_id, org_name, name, currency, balance, available_balance, balance_at)
 		VALUES ($1,$2,$3,$4,$5,$6::numeric,$7::numeric,$8)
 		ON CONFLICT (id) DO UPDATE SET
 			connection_id = EXCLUDED.connection_id, org_name = EXCLUDED.org_name,
@@ -85,9 +86,11 @@ func UpsertAccount(ctx context.Context, tx pgx.Tx, a Account) error {
 			balance           = CASE WHEN $9 THEN EXCLUDED.balance ELSE accounts.balance END,
 			available_balance = CASE WHEN $9 THEN EXCLUDED.available_balance ELSE accounts.available_balance END,
 			balance_at        = CASE WHEN $9 THEN EXCLUDED.balance_at ELSE accounts.balance_at END,
-			updated_at = now()`,
-		a.ID, connID, a.OrgName, a.Name, a.Currency, a.Balance, a.AvailableBalance, a.BalanceAt, a.UpdateBalance)
-	return err
+			updated_at = now()
+		RETURNING xmax = 0`,
+		a.ID, connID, a.OrgName, a.Name, a.Currency, a.Balance, a.AvailableBalance, a.BalanceAt, a.UpdateBalance).
+		Scan(&inserted)
+	return inserted, err
 }
 
 type Transaction struct {

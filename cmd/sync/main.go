@@ -84,7 +84,7 @@ func run(ctx context.Context, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	log.Info("sync complete", "requests", res.Requests, "transactions_seen", res.TxnsSeen,
+	log.Info("sync complete", "requests", res.Requests, "new_accounts", res.NewAccounts, "transactions_seen", res.TxnsSeen,
 		"stale_pending_deleted", res.StaleDeleted, "snapshots", res.Snapshots)
 
 	c, err := s.Store.Categorize(ctx)

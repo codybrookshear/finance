@@ -2,6 +2,7 @@ package syncer
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -24,12 +25,14 @@ type fakeBank struct {
 	balance string
 	txns    []simplefin.Transaction
 	queries []simplefin.Query
+	// A second bank, connected later: nil until then.
+	savings []simplefin.Transaction
 }
 
-func (f *fakeBank) Accounts(_ context.Context, q simplefin.Query) (*simplefin.AccountSet, error) {
-	f.queries = append(f.queries, q)
+// inWindow keeps the transactions a query asks for.
+func inWindow(txns []simplefin.Transaction, q simplefin.Query) []simplefin.Transaction {
 	var out []simplefin.Transaction
-	for _, t := range f.txns {
+	for _, t := range txns {
 		if t.Pending && !q.Pending {
 			continue
 		}
@@ -42,14 +45,28 @@ func (f *fakeBank) Accounts(_ context.Context, q simplefin.Query) (*simplefin.Ac
 			out = append(out, t)
 		}
 	}
-	return &simplefin.AccountSet{
+	return out
+}
+
+func (f *fakeBank) Accounts(_ context.Context, q simplefin.Query) (*simplefin.AccountSet, error) {
+	f.queries = append(f.queries, q)
+	set := &simplefin.AccountSet{
 		Connections: []simplefin.Connection{{ConnID: "C1", Name: "Example Bank", OrgURL: "https://bank.example"}},
 		Accounts: []simplefin.Account{{
 			ID: "A1", Name: "Checking", ConnID: "C1", Currency: "USD",
 			Balance: simplefin.Decimal(f.balance), BalanceDate: simplefin.UnixTime(f.now().Unix()),
-			Transactions: out,
+			Transactions: inWindow(f.txns, q),
 		}},
-	}, nil
+	}
+	if f.savings != nil {
+		set.Connections = append(set.Connections, simplefin.Connection{ConnID: "C2", Name: "Second Bank"})
+		set.Accounts = append(set.Accounts, simplefin.Account{
+			ID: "S1", Name: "Savings", ConnID: "C2", Currency: "USD",
+			Balance: "500.00", BalanceDate: simplefin.UnixTime(f.now().Unix()),
+			Transactions: inWindow(f.savings, q),
+		})
+	}
+	return set, nil
 }
 
 var clock time.Time
@@ -251,5 +268,50 @@ func TestSyncPreservesUserFields(t *testing.T) {
 	}
 	if n := count(t, pool, `SELECT count(*) FROM accounts WHERE display_name='Joint' AND kind='checking'`); n != 1 {
 		t.Error("sync overwrote user account fields")
+	}
+}
+
+// A bank connected after the backfill finished still gets its history.
+func TestNewAccountGetsHistory(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	day := 24 * time.Hour
+	clock = time.Date(2026, 10, 2, 18, 0, 0, 0, time.UTC)
+
+	bank := &fakeBank{balance: "100.00", txns: []simplefin.Transaction{
+		{ID: "R1", Posted: ut(clock.Add(-2 * day)), Amount: "-1.00", Description: "RECENT"},
+	}}
+	cfg := DefaultConfig()
+	cfg.Now = func() time.Time { return clock }
+	cfg.MaxLookback = 400 * day
+	s := &Syncer{Store: &store.Store{Pool: pool}, Client: bank, Cfg: cfg,
+		Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+
+	// Sync until the backfill is done (empty windows end it).
+	for i := 0; i < 5; i++ {
+		if _, err := s.Run(ctx); err != nil {
+			t.Fatal(err)
+		}
+		clock = clock.Add(6 * time.Hour)
+	}
+	if n := count(t, pool, `SELECT count(*) FROM sync_state WHERE backfill_done`); n != 1 {
+		t.Fatal("backfill should be done before the second bank appears")
+	}
+
+	// Connect a second bank with history going back four months.
+	for i, age := range []int{10, 60, 120} {
+		bank.savings = append(bank.savings, simplefin.Transaction{
+			ID: fmt.Sprintf("S%d", i), Posted: ut(clock.Add(-time.Duration(age) * day)), Amount: "25.00", Description: "DEPOSIT",
+		})
+	}
+	res, err := s.Run(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.NewAccounts != 1 {
+		t.Errorf("new accounts = %d, want 1", res.NewAccounts)
+	}
+	if n := count(t, pool, `SELECT count(*) FROM transactions WHERE account_id = 'S1'`); n != 3 {
+		t.Errorf("second bank has %d transactions after one sync, want all 3", n)
 	}
 }
