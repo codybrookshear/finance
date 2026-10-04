@@ -364,8 +364,8 @@ func TestPages(t *testing.T) {
 				t.Errorf("missing %q", want)
 			}
 		}
-		if strings.Contains(b, "Closed") {
-			t.Error("hidden account shown")
+		if !regexp.MustCompile(`(?s)<li class="group">\s*<span class="what">Hidden</span>.*Closed`).MatchString(b) {
+			t.Error("the hidden account should be listed under Hidden")
 		}
 	})
 }
@@ -541,4 +541,90 @@ func page(t *testing.T, h http.Handler, target string) string {
 		t.Fatalf("GET %s: %d\n%s", target, res.StatusCode, b)
 	}
 	return b
+}
+
+func TestAccountSettings(t *testing.T) {
+	db := seed(t)
+	ctx := context.Background()
+	owner, err := pgxpool.New(ctx, os.Getenv("TEST_OWNER_DATABASE_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Close()
+	// A joint account that two bank logins both report: same name and
+	// balance, different connection.
+	for _, sql := range []string{
+		`INSERT INTO connections (id, name) VALUES ('v1', 'Login A'), ('v2', 'Login B')`,
+		`INSERT INTO accounts (id, connection_id, org_name, name, balance, balance_at) VALUES
+			('joint-a', 'v1', 'Login A', 'Brokerage (1234)', 5000, now()),
+			('joint-b', 'v2', 'Login B', 'Brokerage (1234)', 5000, now())`,
+		`INSERT INTO transactions (account_id, id, posted_at, amount, description) VALUES
+			('joint-a', 'div', now(), 12.00, 'DIVIDEND'), ('joint-b', 'div', now(), 12.00, 'DIVIDEND')`,
+	} {
+		if _, err := owner.Exec(ctx, sql); err != nil {
+			t.Fatal(err)
+		}
+	}
+	srv, err := New(Config{DB: db, DevEmail: "dev@example.com", Location: la, Log: quiet})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := srv.Handler()
+	save := func(form url.Values) *http.Response {
+		t.Helper()
+		r := httptest.NewRequest(http.MethodPost, "/accounts/settings", strings.NewReader(form.Encode()))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		r.Header.Set("Sec-Fetch-Site", "same-origin")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Result()
+	}
+
+	b := page(t, h, "/accounts")
+	for _, want := range []string{"also under Login A", "also under Login B", "$10,750.25"} {
+		if !strings.Contains(b, want) {
+			t.Errorf("before: missing %q", want)
+		}
+	}
+	if b := page(t, h, "/transactions?q=dividend"); !strings.Contains(b, "2 transactions") {
+		t.Error("both copies' transactions should show before hiding")
+	}
+
+	res := save(url.Values{"id": {"joint-b"}, "networth": {"on"}, "hidden": {"on"}})
+	if res.StatusCode != http.StatusNoContent || res.Header.Get("HX-Refresh") != "true" {
+		t.Fatalf("hide: %d", res.StatusCode)
+	}
+	b = page(t, h, "/accounts")
+	if strings.Contains(b, "also under") || !strings.Contains(b, "$5,750.25") {
+		t.Error("after hiding one copy: no duplicate flag, counted once")
+	}
+	if b := page(t, h, "/transactions?q=dividend"); !strings.Contains(b, "1 transaction ") {
+		t.Error("the hidden copy's transactions should be gone")
+	}
+
+	// Rename, and leave it out of net worth.
+	save(url.Values{"id": {"joint-a"}, "name": {"Joint brokerage"}})
+	b = page(t, h, "/accounts")
+	if !strings.Contains(b, `value="Joint brokerage" placeholder="Brokerage (1234)"`) || !strings.Contains(b, "$750.25") {
+		t.Error("rename / not in net worth")
+	}
+	// Unhide and back to SimpleFIN's name.
+	save(url.Values{"id": {"joint-b"}, "networth": {"on"}})
+	if b := page(t, h, "/transactions?q=dividend"); !strings.Contains(b, "2 transactions") {
+		t.Error("unhiding should bring the transactions back")
+	}
+
+	if res := save(url.Values{"id": {"nope"}}); res.StatusCode != http.StatusNotFound {
+		t.Errorf("unknown account: %d", res.StatusCode)
+	}
+	if res := save(url.Values{"id": {"joint-a"}, "name": {strings.Repeat("x", 101)}}); res.StatusCode != http.StatusBadRequest {
+		t.Errorf("long name: %d", res.StatusCode)
+	}
+	err = db.edit(ctx, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE accounts SET balance = 0 WHERE id = 'joint-a'`)
+		return err
+	})
+	if err == nil || !strings.Contains(err.Error(), "permission denied") {
+		t.Errorf("finance_edit changed a balance: %v", err)
+	}
 }

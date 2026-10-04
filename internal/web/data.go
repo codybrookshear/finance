@@ -23,6 +23,16 @@ type Account struct {
 	OrgTotal                         string // the institution's accounts counted in net worth
 }
 
+// AccountSettings is an account as the Accounts page shows and edits it.
+type AccountSettings struct {
+	Account
+	DisplayName  string // your name for it ("" = SimpleFIN's)
+	OriginalName string // SimpleFIN's name
+	Hidden       bool
+	Group        string // the heading it's listed under: institution, or "Hidden"
+	DupOf        string // institution of a likely duplicate (same name and balance), if any
+}
+
 type Txn struct {
 	AccountID, ID, Account, Currency string
 	At                               time.Time
@@ -402,6 +412,47 @@ func (db *DB) NetWorthNow(ctx context.Context) ([]Total, error) {
 		return nil, fmt.Errorf("net worth: %w", err)
 	}
 	return pgx.CollectRows(rows, pgx.RowToStructByPos[Total])
+}
+
+// AllAccounts lists every account for the Accounts page, hidden ones last.
+// A visible account with the same name, currency and balance as another
+// visible account under a different connection is flagged as a likely
+// duplicate: typically a joint account that two bank logins both report.
+func (db *DB) AllAccounts(ctx context.Context) ([]AccountSettings, error) {
+	rows, err := db.Pool.Query(ctx, `
+		SELECT a.id, coalesce(a.display_name, a.name), a.org_name, a.currency,
+		       round(a.balance, 2)::text, a.balance_at, a.include_in_net_worth,
+		       round(coalesce(sum(a.balance) FILTER (WHERE a.include_in_net_worth AND NOT a.hidden)
+		                      OVER (PARTITION BY a.org_name), 0), 2)::text,
+		       coalesce(a.display_name, ''), a.name, a.hidden,
+		       coalesce((SELECT o.org_name FROM accounts o
+		                 WHERE o.id <> a.id AND NOT o.hidden AND NOT a.hidden
+		                   AND o.name = a.name AND o.currency = a.currency AND o.balance = a.balance
+		                   AND coalesce(o.connection_id, '') <> coalesce(a.connection_id, '')
+		                 ORDER BY o.org_name LIMIT 1), '')
+		FROM accounts a
+		ORDER BY a.hidden, lower(a.org_name), a.include_in_net_worth DESC,
+		         lower(coalesce(a.display_name, a.name))`)
+	if err != nil {
+		return nil, err
+	}
+	accts, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (AccountSettings, error) {
+		var a AccountSettings
+		err := r.Scan(&a.ID, &a.Name, &a.Org, &a.Currency, &a.Balance, &a.BalanceAt, &a.InNetWorth,
+			&a.OrgTotal, &a.DisplayName, &a.OriginalName, &a.Hidden, &a.DupOf)
+		return a, err
+	})
+	for i := range accts {
+		switch {
+		case accts[i].Hidden:
+			accts[i].Group = "Hidden"
+		case accts[i].Org == "":
+			accts[i].Group = "Other accounts"
+		default:
+			accts[i].Group = accts[i].Org
+		}
+	}
+	return accts, err
 }
 
 // LastSync is when the last successful sync finished (nil if never).
