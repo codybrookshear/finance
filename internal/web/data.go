@@ -20,6 +20,7 @@ type Account struct {
 	ID, Name, Org, Currency, Balance string
 	BalanceAt                        *time.Time
 	InNetWorth                       bool
+	OrgTotal                         string // the institution's accounts counted in net worth
 }
 
 type Txn struct {
@@ -129,15 +130,17 @@ type DB struct{ Pool *pgxpool.Pool }
 func (db *DB) Accounts(ctx context.Context) ([]Account, error) {
 	rows, err := db.Pool.Query(ctx, `
 		SELECT id, coalesce(display_name, name), org_name, currency,
-		       round(balance, 2)::text, balance_at, include_in_net_worth
+		       round(balance, 2)::text, balance_at, include_in_net_worth,
+		       round(coalesce(sum(balance) FILTER (WHERE include_in_net_worth)
+		                      OVER (PARTITION BY org_name), 0), 2)::text
 		FROM accounts WHERE NOT hidden
-		ORDER BY include_in_net_worth DESC, org_name, coalesce(display_name, name)`)
+		ORDER BY lower(org_name), include_in_net_worth DESC, lower(coalesce(display_name, name))`)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Account, error) {
 		var a Account
-		err := r.Scan(&a.ID, &a.Name, &a.Org, &a.Currency, &a.Balance, &a.BalanceAt, &a.InNetWorth)
+		err := r.Scan(&a.ID, &a.Name, &a.Org, &a.Currency, &a.Balance, &a.BalanceAt, &a.InNetWorth, &a.OrgTotal)
 		return a, err
 	})
 }

@@ -15,11 +15,18 @@
 {{- end}}
 <h2>Accounts</h2>
 <ul class="list accounts">
+  {{- $org := "\x00"}}
   {{- range .Accounts}}
+  {{- if ne .Org $org}}{{$org = .Org}}
+  <li class="group">
+    <span class="what">{{if .Org}}{{.Org}}{{else}}Other accounts{{end}}</span>
+    <span class="amt{{if neg .OrgTotal}} out{{end}}">{{money .OrgTotal .Currency}}</span>
+  </li>
+  {{- end}}
   <li>
     <span class="what">{{.Name}}</span>
     <span class="amt{{if neg .Balance}} out{{end}}">{{money .Balance .Currency}}</span>
-    <span class="meta">{{.Org}}{{if not .InNetWorth}} · not in net worth{{end}} · as of {{stamp .BalanceAt}}</span>
+    <span class="meta">{{if not .InNetWorth}}not in net worth · {{end}}as of {{stamp .BalanceAt}}</span>
   </li>
   {{- else}}
   <li class="empty">No accounts yet.</li>

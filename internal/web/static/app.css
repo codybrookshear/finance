@@ -257,7 +257,17 @@ details.month > summary { padding: 0.75rem 0.8rem; font-weight: 600; }
 details.month > summary .meta { font-weight: 400; }
 details.month .list { border: 0; border-top: 1px solid var(--line); border-radius: 0; }
 details.month p { margin: 0; padding: 0.6rem 0.8rem; font-size: 0.9rem; }
-.cats meter { grid-column: 1 / -1; width: 100%; height: 0.4rem; }
+.cats meter { grid-column: 1 / -1; width: 100%; height: 0.4rem; margin-top: 0.45rem; }
+
+/* Net worth: accounts grouped under their institution */
+.accounts > li.group {
+  padding: 0.35rem 0.8rem;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
 
 /* Net worth chart */
 .chart { width: 100%; min-height: 240px; color: var(--accent); margin-bottom: 1rem; }

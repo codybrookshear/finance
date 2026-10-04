@@ -341,6 +341,7 @@ func TestPages(t *testing.T) {
 		b := page("/networth")
 		// Current: 1000.50 + (-250.25); the hidden account doesn't count.
 		for _, want := range []string{"$750.25", "Checking", "−$250.25", `id="networth-chart"`,
+			`<li class="group">`, `<span class="what">Test Bank</span>`,
 			`data-values="900.00,1000.00,1100.00"`} {
 			if !strings.Contains(b, want) {
 				t.Errorf("missing %q", want)
