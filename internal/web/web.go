@@ -55,7 +55,7 @@ func New(cfg Config) (*Server, error) {
 	}
 	s := &Server{cfg: cfg, static: http.FileServerFS(staticFS), version: version}
 	s.pages = map[string]*template.Template{}
-	for _, page := range []string{"transactions", "spending", "networth"} {
+	for _, page := range []string{"transactions", "spending", "networth", "rules"} {
 		t, err := template.New("layout.html").Funcs(s.funcs()).
 			ParseFS(files, "templates/layout.html", "templates/"+page+".html")
 		if err != nil {
@@ -69,16 +69,23 @@ func New(cfg Config) (*Server, error) {
 // Handler returns the app with all middleware applied.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	// GET patterns also match HEAD; any other method gets 405. The app is
-	// read-only, so there is nothing for a forged request to change.
+	// GET patterns also match HEAD; other methods get 405. The few POST
+	// routes are edits; CrossOriginProtection (below) refuses them from any
+	// other site.
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/transactions", http.StatusSeeOther)
 	})
 	mux.HandleFunc("GET /transactions", s.transactions)
 	mux.HandleFunc("GET /spending", s.spending)
 	mux.HandleFunc("GET /networth", s.networth)
+	mux.HandleFunc("GET /transactions/edit", s.editForm)
+	mux.HandleFunc("POST /transactions/edit", s.saveTxn)
+	mux.HandleFunc("GET /rules", s.rules)
+	mux.HandleFunc("POST /rules", s.addRule)
+	mux.HandleFunc("POST /rules/delete", s.deleteRule)
 	mux.HandleFunc("GET /static/", s.serveStatic)
-	return s.securityHeaders(s.logRequests(s.recoverPanics(s.authenticate(mux))))
+	csrf := http.NewCrossOriginProtection() // Sec-Fetch-Site / Origin checks on non-GET requests
+	return s.securityHeaders(s.logRequests(s.recoverPanics(s.authenticate(csrf.Handler(mux)))))
 }
 
 const csp = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; " +
@@ -199,8 +206,11 @@ func (s *Server) funcs() template.FuncMap {
 	return template.FuncMap{
 		"money":  formatMoney,
 		"commas": commas,
-		"neg":    isNegative,
-		"asset":  func(name string) string { return "/static/" + name + "?v=" + s.version },
+		"fieldName": func(f string) string {
+			return map[string]string{"payee": "payee", "description": "description", "memo": "bank text"}[f]
+		},
+		"neg":   isNegative,
+		"asset": func(name string) string { return "/static/" + name + "?v=" + s.version },
 		"day": func(t time.Time) string {
 			t = t.In(s.cfg.Location)
 			if t.Year() == time.Now().In(s.cfg.Location).Year() {

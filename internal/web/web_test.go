@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -175,7 +176,7 @@ func seed(t *testing.T) *DB {
 			t.Fatalf("%s: %v", sql, err)
 		}
 	}
-	for _, s := range []string{`DELETE FROM balance_snapshots`, `DELETE FROM transactions`,
+	for _, s := range []string{`DELETE FROM balance_snapshots`, `DELETE FROM transactions`, `DELETE FROM rules`,
 		`DELETE FROM accounts`, `DELETE FROM connections`, `DELETE FROM sync_runs`} {
 		exec(s)
 	}
@@ -343,4 +344,173 @@ func TestPages(t *testing.T) {
 			t.Error("hidden account shown")
 		}
 	})
+}
+
+func TestEditing(t *testing.T) {
+	db := seed(t)
+	ctx := context.Background()
+	owner, err := pgxpool.New(ctx, os.Getenv("TEST_OWNER_DATABASE_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Close()
+	catID := func(name string) string {
+		var id int32
+		if err := owner.QueryRow(ctx, `SELECT id FROM categories WHERE name = $1`, name).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return fmt.Sprint(id)
+	}
+	state := func(id string) (category, source, note string) {
+		t.Helper()
+		if err := owner.QueryRow(ctx, `SELECT coalesce(c.name, ''), coalesce(t.category_source, ''), coalesce(t.note, '')
+			FROM transactions t LEFT JOIN categories c ON c.id = t.category_id WHERE t.id = $1`, id).
+			Scan(&category, &source, &note); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+
+	srv, err := New(Config{DB: db, DevEmail: "dev@example.com", Location: la, Log: quiet})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := srv.Handler()
+	post := func(target string, form url.Values, hdr ...string) *http.Response {
+		t.Helper()
+		r := httptest.NewRequest(http.MethodPost, target, strings.NewReader(form.Encode()))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		r.Header.Set("Sec-Fetch-Site", "same-origin")
+		for i := 0; i+1 < len(hdr); i += 2 {
+			r.Header.Set(hdr[i], hdr[i+1])
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Result()
+	}
+
+	t.Run("database permissions", func(t *testing.T) {
+		if _, err := db.Pool.Exec(ctx, `UPDATE transactions SET note = 'x'`); err == nil || !strings.Contains(err.Error(), "permission denied") {
+			t.Errorf("finance_web wrote without SET ROLE: %v", err)
+		}
+		err := db.edit(ctx, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `UPDATE transactions SET amount = 0 WHERE id = 'c00'`)
+			return err
+		})
+		if err == nil || !strings.Contains(err.Error(), "permission denied") {
+			t.Errorf("finance_edit changed an amount: %v", err)
+		}
+	})
+
+	t.Run("edit form", func(t *testing.T) {
+		b := body(t, get(t, h, "/transactions/edit?account=card&id=groc"))
+		for _, want := range []string{`<select name="category">`, `>Groceries</option>`, "payee containing", `value="Grocer"`} {
+			if !strings.Contains(b, want) {
+				t.Errorf("missing %q", want)
+			}
+		}
+		if res := get(t, h, "/transactions/edit?account=old&id=secret"); res.StatusCode != http.StatusNotFound {
+			t.Errorf("hidden account: %d", res.StatusCode)
+		}
+	})
+
+	t.Run("set by hand", func(t *testing.T) {
+		res := post("/transactions/edit", url.Values{"account": {"chk"}, "id": {"c00"},
+			"category": {catID("Dining")}, "note": {"with Sam"}})
+		b := body(t, res)
+		if res.StatusCode != http.StatusOK || !strings.Contains(b, "<details open>") ||
+			!strings.Contains(b, "Dining") || !strings.Contains(b, "with Sam") {
+			t.Fatalf("save: %d\n%s", res.StatusCode, b)
+		}
+		if c, src, note := state("c00"); c != "Dining" || src != "manual" || note != "with Sam" {
+			t.Errorf("c00 = %q %q %q", c, src, note)
+		}
+	})
+
+	t.Run("make a rule", func(t *testing.T) {
+		res := post("/transactions/edit", url.Values{"account": {"chk"}, "id": {"c01"},
+			"category": {catID("Dining")}, "rule": {"on"}, "rule_field": {"payee"}, "rule_pattern": {"coffee"}})
+		if res.StatusCode != http.StatusNoContent || res.Header.Get("HX-Refresh") != "true" {
+			t.Fatalf("save with rule: %d", res.StatusCode)
+		}
+		if c, src, _ := state("c02"); c != "Dining" || src != "rule" {
+			t.Errorf("rule didn't apply to history: %q %q", c, src)
+		}
+		if b := body(t, get(t, h, "/rules")); !strings.Contains(b, "payee contains “coffee”") || !strings.Contains(b, "matches 60") {
+			t.Error("rule not listed")
+		}
+		// Back to automatic: the rule now decides.
+		post("/transactions/edit", url.Values{"account": {"chk"}, "id": {"c00"}, "category": {""}, "note": {"with Sam"}})
+		if c, src, _ := state("c00"); c != "Dining" || src != "rule" {
+			t.Errorf("automatic: %q %q", c, src)
+		}
+	})
+
+	t.Run("rules page", func(t *testing.T) {
+		res := post("/rules", url.Values{"field": {"description"}, "pattern": {"GROCERY"}, "category": {catID("Groceries")}})
+		if res.StatusCode != http.StatusSeeOther {
+			t.Fatalf("add rule: %d", res.StatusCode)
+		}
+		if b := page(t, h, "/transactions?category="+catID("Groceries")); !strings.Contains(b, "1 transaction ") || !strings.Contains(b, "Grocery store") {
+			t.Error("category filter")
+		}
+		if b := page(t, h, "/transactions?category=none"); strings.Contains(b, "Coffee Shop") || !strings.Contains(b, "Payroll") {
+			t.Error("uncategorized filter")
+		}
+		var id int32
+		if err := owner.QueryRow(ctx, `SELECT id FROM rules WHERE pattern = 'coffee'`).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		if res := post("/rules/delete", url.Values{"id": {fmt.Sprint(id)}}); res.StatusCode != http.StatusSeeOther {
+			t.Fatalf("delete rule: %d", res.StatusCode)
+		}
+		if c, src, _ := state("c02"); c != "" || src != "" {
+			t.Errorf("deleted rule's category stayed: %q %q", c, src)
+		}
+		if c, src, _ := state("c01"); c != "Dining" || src != "manual" {
+			t.Errorf("hand-set category changed: %q %q", c, src)
+		}
+	})
+
+	t.Run("bad requests", func(t *testing.T) {
+		for name, tc := range map[string]struct {
+			form url.Values
+			want int
+		}{
+			"no such category": {url.Values{"account": {"chk"}, "id": {"c03"}, "category": {"999999"}}, 400},
+			"bad category":     {url.Values{"account": {"chk"}, "id": {"c03"}, "category": {"abc"}}, 400},
+			"long note":        {url.Values{"account": {"chk"}, "id": {"c03"}, "note": {strings.Repeat("x", 501)}}, 400},
+			"empty rule":       {url.Values{"account": {"chk"}, "id": {"c03"}, "category": {catID("Dining")}, "rule": {"on"}, "rule_field": {"payee"}}, 400},
+			"bad rule field":   {url.Values{"account": {"chk"}, "id": {"c03"}, "category": {catID("Dining")}, "rule": {"on"}, "rule_field": {"amount"}, "rule_pattern": {"x"}}, 400},
+			"no such txn":      {url.Values{"account": {"chk"}, "id": {"nope"}}, 404},
+			"hidden account":   {url.Values{"account": {"old"}, "id": {"secret"}}, 404},
+		} {
+			if res := post("/transactions/edit", tc.form); res.StatusCode != tc.want {
+				t.Errorf("%s: %d, want %d", name, res.StatusCode, tc.want)
+			}
+		}
+	})
+
+	t.Run("cross-site requests refused", func(t *testing.T) {
+		form := url.Values{"account": {"chk"}, "id": {"c04"}, "category": {catID("Travel")}}
+		if res := post("/transactions/edit", form, "Sec-Fetch-Site", "cross-site"); res.StatusCode != http.StatusForbidden {
+			t.Errorf("Sec-Fetch-Site cross-site: %d", res.StatusCode)
+		}
+		if res := post("/rules/delete", url.Values{"id": {"1"}}, "Sec-Fetch-Site", "", "Origin", "https://evil.example"); res.StatusCode != http.StatusForbidden {
+			t.Errorf("foreign Origin: %d", res.StatusCode)
+		}
+		if c, _, _ := state("c04"); c == "Travel" {
+			t.Error("a cross-site request changed data")
+		}
+	})
+}
+
+func page(t *testing.T, h http.Handler, target string) string {
+	t.Helper()
+	res := get(t, h, target)
+	b := body(t, res)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("GET %s: %d\n%s", target, res.StatusCode, b)
+	}
+	return b
 }

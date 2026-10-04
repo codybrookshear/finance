@@ -3,9 +3,9 @@
 {{define "content" -}}
 <h1>Spending</h1>
 <p class="note">Net income (income minus spending) for each of the last 12 months,
-from posted transactions, transfers left out. Until
-transactions are categorized, all money out is "Uncategorized", including
-credit-card payments, so purchases on a card count twice.</p>
+from posted transactions. Transfers between your own accounts, found
+automatically or marked by you, are left out. Categorize transactions, or add
+<a href="/rules">rules</a>, to fill in the categories.</p>
 {{range $i, $m := .Months -}}
 <details class="month"{{if eq $i 0}} open{{end}}>
   <summary>

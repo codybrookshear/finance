@@ -24,7 +24,11 @@ Single user (me). Security is the top priority; prefer fewer dependencies.
 ## Security invariants (don't break these)
 - SimpleFIN access URL is held only by the `sync` container; never logged or put in errors.
 - DB roles: finance_owner (migrations only), finance_sync (bank columns only, via
-  column-level grants), finance_web (read-only). New tables need explicit grants in a migration.
+  column-level grants), finance_web (read-only; edits only via `SET LOCAL ROLE finance_edit`,
+  which it doesn't inherit), finance_edit (category/transfer/note columns + rules),
+  finance_rules (owns `categorize()`, category columns only). New tables need explicit grants
+  in a migration.
+- Categories set by hand ('manual'/'claude') are never changed by rules or detection.
 - Sync must never overwrite user fields (categories, notes, is_transfer, display names).
 - Postgres stays on the internal Docker network; only `sync` has egress. `web` is on the
   internal network only, so it can't publish a port: in production it listens on a Unix
@@ -40,7 +44,8 @@ Single user (me). Security is the top priority; prefer fewer dependencies.
   port 22 closed at the DO firewall (2026-10-03).
 - Admin workstation is an Ubuntu desktop (not a Mac); droplet SSH key `~/.ssh/finance_ed25519`.
   Domain: `brookshear.party` (Cloudflare Registrar, paid to 2028-10-03); SSH hostname `ssh.brookshear.party`.
-- Web UI (read-only: search, monthly spending, net worth) runs locally via `make dev`
+- Web UI (search, monthly net income/spending, net worth, categorization + rules,
+  transfer detection) runs locally via `make dev`
   (http://<dev box>:8080, demo data, Access check off). Not deployed yet.
 - Next: deploy sync early (balance history starts accruing) → deploy web (socket,
   Access app, signing-key refresh timer) → MCP server.

@@ -1,0 +1,37 @@
+{{define "title"}}Rules{{end}}
+
+{{define "content" -}}
+<h1>Rules</h1>
+<p class="note">A rule categorizes every transaction, past and future, whose
+payee, description or bank text contains its text (ignoring case). If several
+match, the oldest rule wins. Categories you set by hand always stay. You can
+also make a rule from any transaction.</p>
+<form class="filters" action="/rules" method="post">
+  <div class="row">
+    <select name="field" aria-label="Field to match">
+      <option value="payee">Payee</option>
+      <option value="description">Description</option>
+      <option value="memo">Bank text</option>
+    </select>
+    <select name="category" aria-label="Category" required>
+      <option value="">Category…</option>
+      {{- range .Categories}}
+      <option value="{{.ID}}">{{.Name}}</option>
+      {{- end}}
+    </select>
+  </div>
+  <input name="pattern" placeholder="contains…" maxlength="200" required autocomplete="off" aria-label="Text to match">
+  <button type="submit">Add rule</button>
+</form>
+<ul class="list rules">
+  {{- range .Rules}}
+  <li>
+    <span class="what">{{fieldName .Field}} contains “{{.Pattern}}”</span>
+    <form action="/rules/delete" method="post"><input type="hidden" name="id" value="{{.ID}}"><button type="submit" class="link">Delete</button></form>
+    <span class="meta">→ {{if .Category}}{{.Category}}{{else}}Transfer{{end}} · matches {{commas .Matches}}</span>
+  </li>
+  {{- else}}
+  <li class="empty">No rules yet.</li>
+  {{- end}}
+</ul>
+{{- end}}

@@ -137,3 +137,16 @@ func UpsertSnapshot(ctx context.Context, tx pgx.Tx, accountID string, asOf time.
 		accountID, asOf.Format("2006-01-02"), balance, available, balanceAt)
 	return err
 }
+
+// Categorized counts what categorize() changed.
+type Categorized struct{ Ruled, Cleared, Transfers int }
+
+// Categorize runs the database's categorize() (migrations/0003): rules, then
+// transfer detection. It never changes a category set by hand. The sync role
+// can run it but can't write category columns itself.
+func (s *Store) Categorize(ctx context.Context) (Categorized, error) {
+	var c Categorized
+	err := s.Pool.QueryRow(ctx, `SELECT ruled, cleared, transfers FROM categorize()`).
+		Scan(&c.Ruled, &c.Cleared, &c.Transfers)
+	return c, err
+}

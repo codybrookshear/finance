@@ -15,6 +15,15 @@
       <option value="{{.ID}}"{{if eq .ID $.Account}} selected{{end}}>{{.Name}}</option>
       {{- end}}
     </select>
+    <select name="category" aria-label="Category">
+      <option value="">All categories</option>
+      <option value="none"{{if eq .Category "none"}} selected{{end}}>Uncategorized</option>
+      {{- range .Categories}}
+      <option value="{{.ID}}"{{if eq (print .ID) $.Category}} selected{{end}}>{{.Name}}</option>
+      {{- end}}
+    </select>
+  </div>
+  <div class="row">
     <input type="date" name="from" value="{{.From}}" aria-label="From">
     <input type="date" name="to" value="{{.To}}" aria-label="To">
   </div>
@@ -37,26 +46,53 @@
 {{- end}}
 
 {{define "rows" -}}
-{{range .Txns -}}
+{{range .Txns}}{{template "txn" .}}
+{{else -}}
+<li class="empty">No transactions match.</li>
+{{end -}}
+{{if .Next}}<li id="more" class="more" hx-get="{{.Next}}" hx-trigger="revealed" hx-swap="outerHTML">Loading…</li>{{end}}
+{{- end}}
+
+{{define "txn" -}}
 <li{{if .Pending}} class="pending"{{end}}>
-  <details>
+  <details{{if .Open}} open{{end}}>
     <summary>
       <span class="what">{{if .Description}}{{.Description}}{{else}}{{.Payee}}{{end}}</span>
       <span class="amt{{if neg .Amount}} out{{else}} in{{end}}">{{money .Amount .Currency}}</span>
       <span class="meta">{{day .At}} · {{.Account}}
-        {{- if .Category}} · {{.Category}}{{end}}
-        {{- if .Pending}} · pending{{end}}
-        {{- if .Transfer}} · transfer{{end}}</span>
+        {{- if .Category}} · {{.Category}}{{else if .Transfer}} · transfer{{end}}
+        {{- if .Pending}} · pending{{end}}</span>
     </summary>
     <dl>
       {{- if .Payee}}<dt>Payee</dt><dd>{{.Payee}}</dd>{{end}}
       {{- if .Memo}}<dt>Bank text</dt><dd>{{.Memo}}</dd>{{end}}
       <dt>Account</dt><dd>{{.Account}}</dd>
+      {{- if .Note}}<dt>Note</dt><dd>{{.Note}}</dd>{{end}}
     </dl>
+    <div class="edit-slot" hx-get="{{.EditURL}}" hx-trigger="intersect once" hx-swap="outerHTML"></div>
   </details>
 </li>
-{{else -}}
-<li class="empty">No transactions match.</li>
-{{end -}}
-{{if .Next}}<li id="more" class="more" hx-get="{{.Next}}" hx-trigger="revealed" hx-swap="outerHTML">Loading…</li>{{end}}
+{{- end}}
+
+{{define "edit" -}}
+<form class="edit" hx-post="/transactions/edit" hx-target="closest li" hx-swap="outerHTML">
+  <input type="hidden" name="account" value="{{.Txn.AccountID}}">
+  <input type="hidden" name="id" value="{{.Txn.ID}}">
+  <label>Category
+    <select name="category">
+      <option value="">Automatic{{if and .Txn.Category (not .Selected)}}: {{.Txn.Category}}{{end}}</option>
+      {{- range .Categories}}
+      <option value="{{.ID}}"{{if eq .ID $.Selected}} selected{{end}}>{{.Name}}</option>
+      {{- end}}
+    </select>
+  </label>
+  {{- if eq .Txn.Source "rule"}}<p class="hint">Set by a rule.</p>
+  {{- else if eq .Txn.Source "auto"}}<p class="hint">Detected as a transfer between your accounts.</p>
+  {{- else if .Selected}}<p class="hint">Set by you. Choose Automatic to let rules decide.</p>{{end}}
+  <label class="check"><input type="checkbox" name="rule" value="on"> Also use it for every {{fieldName .RuleField}} containing:</label>
+  <input name="rule_pattern" value="{{.RuleText}}" maxlength="200" aria-label="Text the rule matches">
+  <input type="hidden" name="rule_field" value="{{.RuleField}}">
+  <label>Note <input name="note" value="{{.Txn.Note}}" maxlength="500" autocomplete="off"></label>
+  <div class="actions"><button type="submit">Save</button><a href="/rules">Rules</a></div>
+</form>
 {{- end}}

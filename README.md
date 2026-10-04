@@ -17,8 +17,10 @@ behind Cloudflare Access, and a local MCP server for Claude.
   | role | can |
   |---|---|
   | `finance_owner` | schema migrations only (`migrate` container) |
-  | `finance_sync`  | write bank-sourced columns; **cannot** touch categories, notes, user flags, rules |
-  | `finance_web`   | read-only (UI, API, MCP) |
+  | `finance_sync`  | write bank-sourced columns; **cannot** touch categories, notes, user flags, rules (it may run `categorize()`) |
+  | `finance_web`   | read-only (UI, API, MCP); may `SET ROLE finance_edit` for edits, but doesn't inherit it |
+  | `finance_edit`  | no login. The UI's edit requests: category, transfer flag, note, and rules only |
+  | `finance_rules` | no login. Owns `categorize()` (rules + transfer detection); can change category columns only |
 
 - **Network:** Postgres sits on an `internal` Docker network with no internet route
   and no published ports. Only `sync` can reach the internet.

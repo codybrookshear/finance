@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -26,8 +27,33 @@ type Txn struct {
 	AccountID, ID, Account, Currency string
 	At                               time.Time
 	Amount, Description, Payee, Memo string
-	Category                         string
+	Category                         string // name, "" if none
+	CategoryID                       *int32
+	Source                           string // rule, auto, manual, claude, or "" (none)
+	Note                             string
 	Pending, Transfer                bool
+	Open                             bool // view only: render with details expanded
+}
+
+// EditURL loads this transaction's edit form.
+func (t Txn) EditURL() string {
+	return "/transactions/edit?" + url.Values{"account": {t.AccountID}, "id": {t.ID}}.Encode()
+}
+
+// Category is one of the categories a transaction can have.
+type Category struct {
+	ID   int32
+	Name string
+	Kind string // expense, income or transfer
+}
+
+func (db *DB) Categories(ctx context.Context) ([]Category, error) {
+	rows, err := db.Pool.Query(ctx, `SELECT id, name, kind FROM categories
+		ORDER BY kind = 'transfer', kind = 'income', name`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[Category])
 }
 
 // TxnFilter selects transactions. Zero values mean "no filter".
@@ -35,6 +61,7 @@ type TxnFilter struct {
 	Query     string
 	AccountID string
 	From, To  *time.Time // [From, To)
+	Category  string     // "" all, "none" uncategorized, or a category ID
 	After     *Cursor    // next page: rows strictly older than this
 	Limit     int
 }
@@ -96,7 +123,7 @@ const (
 		FROM transactions t
 		JOIN accounts a ON a.id = t.account_id
 		LEFT JOIN categories c ON c.id = t.category_id`
-	// $1 query, $2 LIKE pattern, $3 amount (or NULL), $4 account, $5 from, $6 to
+	// $1 query, $2 LIKE pattern, $3 amount (or NULL), $4 account, $5 from, $6 to, $7 category
 	txnWhere = `
 		WHERE NOT a.hidden
 		  AND ($1::text = ''
@@ -105,7 +132,14 @@ const (
 		       OR ($3::text IS NOT NULL AND abs(t.amount) = $3::text::numeric))
 		  AND ($4::text = '' OR t.account_id = $4)
 		  AND ($5::timestamptz IS NULL OR ` + txnSortAt + ` >= $5)
-		  AND ($6::timestamptz IS NULL OR ` + txnSortAt + ` < $6)`
+		  AND ($6::timestamptz IS NULL OR ` + txnSortAt + ` < $6)
+		  AND ($7::text = ''
+		       OR ($7 = 'none' AND t.category_id IS NULL AND NOT t.is_transfer)
+		       OR t.category_id::text = $7)`
+	txnCols = `t.account_id, t.id, coalesce(a.display_name, a.name), a.currency, ` + txnSortAt + `,
+		round(t.amount, 2)::text, t.description, t.payee, t.memo,
+		coalesce(c.name, ''), t.category_id, coalesce(t.category_source, ''), coalesce(t.note, ''),
+		t.pending, t.is_transfer`
 )
 
 var amountRE = regexp.MustCompile(`^\$?(\d{1,9}(?:\.\d{1,2})?)$`)
@@ -116,7 +150,7 @@ func (f TxnFilter) args() []any {
 	if m := amountRE.FindStringSubmatch(strings.ReplaceAll(q, ",", "")); m != nil {
 		amount = &m[1]
 	}
-	return []any{q, "%" + escapeLike(q) + "%", amount, f.AccountID, f.From, f.To}
+	return []any{q, "%" + escapeLike(q) + "%", amount, f.AccountID, f.From, f.To, f.Category}
 }
 
 // escapeLike makes user input match literally inside ILIKE '%...%'.
@@ -137,22 +171,14 @@ func (db *DB) Transactions(ctx context.Context, f TxnFilter) ([]Txn, *Cursor, er
 		cAt, cAcct, cID = &f.After.At, f.After.AccountID, f.After.ID
 	}
 	args = append(args, cAt, cAcct, cID, f.Limit+1)
-	rows, err := db.Pool.Query(ctx, `
-		SELECT t.account_id, t.id, coalesce(a.display_name, a.name), a.currency, `+txnSortAt+`,
-		       round(t.amount, 2)::text, t.description, t.payee, t.memo,
-		       coalesce(c.name, ''), t.pending, t.is_transfer`+txnFrom+txnWhere+`
-		  AND ($7::timestamptz IS NULL OR (`+txnSortAt+`, t.account_id, t.id) < ($7, $8, $9))
+	rows, err := db.Pool.Query(ctx, `SELECT `+txnCols+txnFrom+txnWhere+`
+		  AND ($8::timestamptz IS NULL OR (`+txnSortAt+`, t.account_id, t.id) < ($8, $9, $10))
 		ORDER BY 5 DESC, t.account_id DESC, t.id DESC
-		LIMIT $10`, args...)
+		LIMIT $11`, args...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("transactions: %w", err)
 	}
-	txns, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Txn, error) {
-		var t Txn
-		err := r.Scan(&t.AccountID, &t.ID, &t.Account, &t.Currency, &t.At, &t.Amount,
-			&t.Description, &t.Payee, &t.Memo, &t.Category, &t.Pending, &t.Transfer)
-		return t, err
-	})
+	txns, err := pgx.CollectRows(rows, scanTxn)
 	if err != nil {
 		return nil, nil, fmt.Errorf("transactions: %w", err)
 	}
@@ -164,6 +190,31 @@ func (db *DB) Transactions(ctx context.Context, f TxnFilter) ([]Txn, *Cursor, er
 	}
 	return txns, next, nil
 }
+
+func scanTxn(r pgx.CollectableRow) (Txn, error) {
+	var t Txn
+	err := r.Scan(&t.AccountID, &t.ID, &t.Account, &t.Currency, &t.At, &t.Amount,
+		&t.Description, &t.Payee, &t.Memo, &t.Category, &t.CategoryID, &t.Source, &t.Note,
+		&t.Pending, &t.Transfer)
+	return t, err
+}
+
+// Txn returns one transaction (ErrNotFound if it doesn't exist or its
+// account is hidden).
+func (db *DB) Txn(ctx context.Context, accountID, id string) (Txn, error) {
+	rows, err := db.Pool.Query(ctx, `SELECT `+txnCols+txnFrom+`
+		WHERE NOT a.hidden AND t.account_id = $1 AND t.id = $2`, accountID, id)
+	if err != nil {
+		return Txn{}, err
+	}
+	t, err := pgx.CollectExactlyOneRow(rows, scanTxn)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Txn{}, ErrNotFound
+	}
+	return t, err
+}
+
+var ErrNotFound = errors.New("not found")
 
 // TxnSummary counts and totals everything the filter matches (all pages).
 func (db *DB) TxnSummary(ctx context.Context, f TxnFilter) (count int, totals []Total, err error) {

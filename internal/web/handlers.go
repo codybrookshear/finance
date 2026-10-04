@@ -23,7 +23,9 @@ func (s *Server) base(r *http.Request, page string) (base, error) {
 type txnPage struct {
 	base
 	Q, Account, From, To string // the filter as typed, echoed into the form
+	Category             string
 	Accounts             []Account
+	Categories           []Category
 	Txns                 []Txn
 	Next                 string // URL of the next page; "" at the end
 	Count                int
@@ -35,7 +37,12 @@ func (s *Server) transactions(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	q := r.URL.Query()
 	p := txnPage{Q: clip(q.Get("q"), 200), Account: clip(q.Get("account"), 200)}
-	f := TxnFilter{Query: p.Q, AccountID: p.Account, Limit: 50}
+	if c := q.Get("category"); c == "none" {
+		p.Category = c
+	} else if id, ok := parseID(c); ok && id != nil {
+		p.Category = c
+	}
+	f := TxnFilter{Query: p.Q, AccountID: p.Account, Category: p.Category, Limit: 50}
 	if t, ok := s.parseDay(q.Get("from")); ok {
 		p.From, f.From = q.Get("from"), &t
 	}
@@ -51,7 +58,7 @@ func (s *Server) transactions(w http.ResponseWriter, r *http.Request) {
 		}
 		f.After = c
 	}
-	p.Filtered = p.Q != "" || p.Account != "" || p.From != "" || p.To != ""
+	p.Filtered = p.Q != "" || p.Account != "" || p.From != "" || p.To != "" || p.Category != ""
 
 	var err error
 	var next *Cursor
@@ -83,6 +90,10 @@ func (s *Server) transactions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p.Accounts, err = s.cfg.DB.Accounts(ctx); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if p.Categories, err = s.cfg.DB.Categories(ctx); err != nil {
 		s.fail(w, r, err)
 		return
 	}

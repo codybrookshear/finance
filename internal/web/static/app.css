@@ -87,7 +87,7 @@ footer {
 
 /* Filters */
 .filters { display: grid; gap: 0.5rem; margin-bottom: 0.5rem; }
-.filters .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem; }
+.filters .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
 
 input, select, button {
   font: inherit;
@@ -100,9 +100,23 @@ input, select, button {
   border-radius: var(--radius);
 }
 
-@media (max-width: 30rem) {
-  .filters .row { grid-template-columns: 1fr 1fr; }
-  .filters .row select { grid-column: 1 / -1; }
+input[type="checkbox"] { width: auto; margin: 0; }
+
+button[type="submit"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button.link {
+  width: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-weight: 400;
 }
 
 /* Lists: transactions, categories, accounts */
@@ -170,3 +184,19 @@ details.month p { margin: 0; padding: 0.6rem 0.8rem; font-size: 0.9rem; }
 /* Net worth chart */
 .chart { width: 100%; min-height: 240px; color: var(--accent); margin-bottom: 1rem; }
 .chart .u-axis { color: var(--muted); }
+
+/* Editing a transaction */
+form.edit {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0 0.8rem 0.9rem;
+  font-size: 0.9rem;
+}
+form.edit label { display: grid; gap: 0.25rem; color: var(--muted); }
+form.edit label.check { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.25rem; }
+form.edit .hint { margin: 0; color: var(--muted); font-size: 0.8rem; }
+form.edit .actions { display: flex; gap: 1rem; align-items: center; }
+form.edit .actions button { width: auto; padding: 0.5rem 1.4rem; }
+
+/* Rules */
+.rules form { margin: 0; }

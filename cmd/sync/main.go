@@ -86,6 +86,12 @@ func run(ctx context.Context, log *slog.Logger) error {
 	}
 	log.Info("sync complete", "requests", res.Requests, "transactions_seen", res.TxnsSeen,
 		"stale_pending_deleted", res.StaleDeleted, "snapshots", res.Snapshots)
+
+	c, err := s.Store.Categorize(ctx)
+	if err != nil {
+		return fmt.Errorf("categorize: %w", err)
+	}
+	log.Info("categorized", "by_rule", c.Ruled, "rule_cleared", c.Cleared, "transfers", c.Transfers)
 	return nil
 }
 
