@@ -61,7 +61,9 @@ install -m 0644 "$SRC/finance-sync.service" "$SRC/finance-sync.timer" \
   "$SRC/finance-access-keys.service" "$SRC/finance-access-keys.timer" /etc/systemd/system/
 systemctl daemon-reload
 systemctl start finance-access-keys.service || die "couldn't fetch the Access signing keys"
-systemctl enable --now --quiet finance-access-keys.timer
+# enable --now leaves an already-running timer on its old schedule; restart it.
+systemctl enable --quiet finance-access-keys.timer
+systemctl restart finance-access-keys.timer
 
 cd "$APP"
 docker compose config --quiet
@@ -75,7 +77,8 @@ if ! systemctl start finance-sync.service; then
   die "the sync failed; see above"
 fi
 journalctl -u finance-sync -n 4 --no-pager -o cat | grep -E 'sync complete|categorized' || true
-systemctl enable --now --quiet finance-sync.timer
+systemctl enable --quiet finance-sync.timer
+systemctl restart finance-sync.timer
 
 echo "Starting the web app..."
 docker compose up --detach web
