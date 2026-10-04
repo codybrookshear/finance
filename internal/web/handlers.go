@@ -2,6 +2,7 @@ package web
 
 import (
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -64,6 +65,7 @@ type txnPage struct {
 	rowsPage
 	Q, Account, From, To string // the filter as typed, echoed into the form
 	Category             string
+	Dir                  string // "in" or "out": only money in or out (from a Spending link)
 	Accounts             []Account
 	Count                int
 	Totals               []Total
@@ -79,7 +81,10 @@ func (s *Server) transactions(w http.ResponseWriter, r *http.Request) {
 	} else if id, ok := parseID(c); ok && id != nil {
 		p.Category = c
 	}
-	f := TxnFilter{Query: p.Q, AccountID: p.Account, Category: p.Category, Limit: 50}
+	if d := q.Get("dir"); d == "in" || d == "out" {
+		p.Dir = d
+	}
+	f := TxnFilter{Query: p.Q, AccountID: p.Account, Category: p.Category, Dir: p.Dir, Limit: 50}
 	from, to := q.Get("from"), q.Get("to")
 	fromDay, fromOK := s.parseDay(from)
 	toDay, toOK := s.parseDay(to)
@@ -101,7 +106,7 @@ func (s *Server) transactions(w http.ResponseWriter, r *http.Request) {
 		}
 		f.After = c
 	}
-	p.Filtered = p.Q != "" || p.Account != "" || p.From != "" || p.To != "" || p.Category != ""
+	p.Filtered = p.Q != "" || p.Account != "" || p.From != "" || p.To != "" || p.Category != "" || p.Dir != ""
 
 	txns, next, err := s.cfg.DB.Transactions(ctx, f)
 	if err != nil {
@@ -201,7 +206,25 @@ func (s *Server) spending(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		last := first.AddDate(0, 1, -1)
-		p.Months = append(p.Months, monthView{m, first.Format(time.DateOnly), last.Format(time.DateOnly)})
+		v := monthView{m, first.Format(time.DateOnly), last.Format(time.DateOnly)}
+		// Each row links to its transactions: that month, that category. The
+		// uncategorized rows split money in from money out, as the totals do.
+		link := func(l *Line, dir string) {
+			q := url.Values{"from": {v.From}, "to": {v.To}, "category": {"none"}}
+			if l.CategoryID != nil {
+				q.Set("category", strconv.Itoa(int(*l.CategoryID)))
+			} else {
+				q.Set("dir", dir)
+			}
+			l.URL = "/transactions?" + q.Encode()
+		}
+		for i := range v.Categories {
+			link(&v.Categories[i], "out")
+		}
+		for i := range v.IncomeCategories {
+			link(&v.IncomeCategories[i], "in")
+		}
+		p.Months = append(p.Months, v)
 	}
 	if p.base, err = s.base(r, "spending"); err != nil {
 		s.fail(w, r, err)
