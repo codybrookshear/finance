@@ -7,3 +7,5 @@
 /bin/
 /tmp/
 .DS_Store
+# Claude Code's local worktrees and screenshots, which can show real data.
+/.claude/
