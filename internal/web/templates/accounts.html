@@ -23,13 +23,18 @@
     <span class="amt{{if neg .OrgTotal}} out{{end}}">{{money .OrgTotal .Currency}}</span>
   </li>
   {{- end}}
-  <li>
-    <span class="what">{{.Name}}</span>
-    <span class="amt{{if neg .Balance}} out{{end}}">{{money .Balance .Currency}}</span>
-    <span class="meta">{{if .AlsoUnder}}also under {{.AlsoUnder}} · {{end}}{{if not .InNetWorth}}not in net worth · {{end}}as of {{stamp .BalanceAt}}</span>
+  <li class="acct">
+    {{- if .HasTxns}}<a class="row" href="/transactions?account={{.ID}}">{{template "account" .}}</a>
+    {{- else}}<div class="row">{{template "account" .}}</div>{{end -}}
   </li>
   {{- else}}
   <li class="empty">No accounts yet.</li>
   {{- end}}
 </ul>
+{{- end}}
+
+{{define "account" -}}
+<span class="what">{{.Name}}</span>
+<span class="amt{{if neg .Balance}} out{{end}}">{{money .Balance .Currency}}</span>
+<span class="meta">{{if .AlsoUnder}}also under {{.AlsoUnder}} · {{end}}{{if not .InNetWorth}}not in net worth · {{end}}as of {{stamp .BalanceAt}}</span>
 {{- end}}

@@ -24,6 +24,7 @@ type Account struct {
 	InNetWorth                       bool
 	OrgTotal                         string // the institution's accounts counted in net worth
 	AlsoUnder                        string // institutions whose duplicate copies were folded into this one
+	HasTxns                          bool   // false for balances kept by hand, and accounts with no activity
 }
 
 // shownAccount is the SQL test for accounts the app shows (alias a).
@@ -151,7 +152,8 @@ func (db *DB) Accounts(ctx context.Context) ([]Account, error) {
 		       round(coalesce(sum(a.balance) FILTER (WHERE a.include_in_net_worth)
 		                      OVER (PARTITION BY a.org_name), 0), 2)::text,
 		       coalesce((SELECT string_agg(DISTINCT d.org_name, ', ') FROM accounts d
-		                 WHERE d.duplicate_of = a.id AND d.org_name <> a.org_name), '')
+		                 WHERE d.duplicate_of = a.id AND d.org_name <> a.org_name), ''),
+		       EXISTS (SELECT 1 FROM transactions t WHERE t.account_id = a.id)
 		FROM accounts a WHERE `+shownAccount+`
 		ORDER BY lower(a.org_name), a.include_in_net_worth DESC, lower(coalesce(a.display_name, a.name))`)
 	if err != nil {
@@ -159,7 +161,7 @@ func (db *DB) Accounts(ctx context.Context) ([]Account, error) {
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Account, error) {
 		var a Account
-		err := r.Scan(&a.ID, &a.Name, &a.Org, &a.Currency, &a.Balance, &a.BalanceAt, &a.InNetWorth, &a.OrgTotal, &a.AlsoUnder)
+		err := r.Scan(&a.ID, &a.Name, &a.Org, &a.Currency, &a.Balance, &a.BalanceAt, &a.InNetWorth, &a.OrgTotal, &a.AlsoUnder, &a.HasTxns)
 		return a, err
 	})
 }

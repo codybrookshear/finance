@@ -194,6 +194,7 @@ func seed(t *testing.T) *DB {
 	exec(`INSERT INTO accounts (id, org_name, name, display_name, balance, balance_at, hidden, include_in_net_worth) VALUES
 		('chk', 'Test Bank', 'CHECKING 1234', 'Checking', 1000.50, now(), false, true),
 		('card', 'Test Bank', 'VISA 9876', NULL, -250.25, now(), false, true),
+		('idle', 'Test Bank', 'SAVINGS 5555', 'Rainy day', 0, now(), false, true),
 		('old', 'Old Bank', 'Closed', NULL, 999, now(), true, true)`)
 
 	now := time.Now().In(la)
@@ -383,6 +384,13 @@ func TestPages(t *testing.T) {
 		}
 		if strings.Contains(b, "Closed") {
 			t.Error("hidden account shown")
+		}
+		// Each account opens its transactions; one with none isn't a link.
+		if !strings.Contains(b, `<a class="row" href="/transactions?account=chk">`) {
+			t.Error("Checking doesn't link to its transactions")
+		}
+		if !strings.Contains(b, `<div class="row"><span class="what">Rainy day</span>`) || strings.Contains(b, "account=idle") {
+			t.Error("an account without transactions should not be a link")
 		}
 	})
 }
