@@ -1,0 +1,27 @@
+# Fetches Cloudflare Access's signing keys for the web app, which has no
+# internet access of its own. The file is replaced atomically inside
+# /etc/finance/access, which the web container mounts read-only (the whole
+# directory: a bind-mounted file would keep pointing at the old version).
+# Installed as /etc/systemd/system/finance-access-keys.service.
+
+[Unit]
+Description=Finance: refresh Cloudflare Access signing keys
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+UMask=0022
+ExecStart=/bin/sh -ec '\
+  tmp=/etc/finance/access/.certs.json.tmp; \
+  curl -fsS --max-time 30 --proto =https -o "$tmp" https://brookshear.cloudflareaccess.com/cdn-cgi/access/certs; \
+  grep -q "\"keys\"" "$tmp"; \
+  mv "$tmp" /etc/finance/access/certs.json'
+ProtectSystem=strict
+ReadWritePaths=/etc/finance/access
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=

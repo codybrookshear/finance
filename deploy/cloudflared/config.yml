@@ -30,5 +30,16 @@ ingress:
         # Access app → Application Audience (AUD) tag
         audTag: [52b07270a638969df4be4ed96cd4cfeb3b36c5963d45b8059a97d7c8c0cc4a05]
 
+  # The web UI: the web container's Unix socket (see compose.prod.yaml). The
+  # app checks the Access JWT too; this makes cloudflared refuse first.
+  - hostname: finance.brookshear.party
+    service: unix:/run/finance-web/web.sock
+    originRequest:
+      access:
+        required: true
+        teamName: brookshear       # <team>.cloudflareaccess.com
+        # Access app for finance.brookshear.party → Application Audience (AUD) tag
+        audTag: [REPLACE_ME_WEB_AUD]
+
   # Anything else, including hostnames not listed above.
   - service: http_status:404

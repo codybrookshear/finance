@@ -1,0 +1,6 @@
+# The web container's socket directory, recreated at every boot (/run is
+# RAM). Owned by the container's user (distroless nonroot, uid 65532); 0711 so
+# cloudflared can reach the socket inside without listing the directory. The
+# app still checks the Cloudflare Access login on every request.
+# Installed as /etc/tmpfiles.d/finance-web.conf.
+d /run/finance-web 0711 65532 65532 -

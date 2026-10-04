@@ -1,7 +1,7 @@
-# Sync on the droplet
+# The app on the droplet
 
-Postgres plus the SimpleFIN sync, run by a systemd timer four times a day
-(`finance-sync.timer`). The web UI isn't deployed yet.
+Postgres, the SimpleFIN sync on a systemd timer (`finance-sync.timer`, four
+times a day), and the web UI at `finance.brookshear.party`.
 
 **Design choices.**
 - Images are built on your workstation from the committed HEAD and copied over
@@ -11,6 +11,11 @@ Postgres plus the SimpleFIN sync, run by a systemd timer four times a day
   `/etc/finance/secrets` (directory root 0700). Compose mounts each container's
   secrets as files under `/run/secrets`.
 - Only the sync container can reach the internet. Postgres has no published port.
+- The web container has no published port and no internet either. It serves a
+  Unix socket in `/run/finance-web`, which cloudflared (on the host) connects
+  to. Cloudflare Access checks the login at the edge, cloudflared checks it
+  again, and the app checks it a third time, against signing keys that
+  `finance-access-keys.timer` fetches hourly into `/etc/finance/access`.
 
 ## First deploy
 
@@ -21,21 +26,33 @@ On your workstation, signed in to 1Password (`eval "$(op signin)"`):
    and paste it. The access URL goes straight to 1Password item `simplefin`.
    Don't paste the token anywhere else: it's single-use, and whoever claims it
    first can read your accounts.
-3. `scripts/sync-deploy.sh`. It asks for your sudo password once, runs a first
-   sync, and enables the timer.
+3. For the web UI, in the Cloudflare dashboard:
+   - Access controls → Applications → Create → Self-hosted, hostname
+     `finance.<your-domain>`, your Allow policy, a login method.
+   - DNS: CNAME `finance` → `<tunnel-id>.cfargotunnel.com`, proxied.
+   - Fill in `REPLACE_ME_WEB_AUD` (in `compose.prod.yaml` and
+     `deploy/cloudflared/config.yml`; the redirect trick in
+     `deploy/cloudflared/README.md` finds it) and `REPLACE_ME_EMAIL` (the email
+     you log in to Access with), and commit.
+4. `scripts/deploy.sh`. It asks for your sudo password once, runs a first
+   sync, enables the timers, starts the web app and checks it refuses requests
+   without a login.
+5. `scripts/tunnel-deploy.sh finance` routes the hostname to the web app.
 
-The first runs backfill history 45 days at a time, 3 windows per run, so it
-fills in over a day or two. Balance history (for net worth) starts with the
+The first sync runs backfill history 45 days at a time, 3 windows per run, so
+it fills in over a day or two. Balance history (for net worth) starts with the
 first sync.
 
 ## Day to day
 
-- Logs: `ssh -t finance sudo journalctl -u finance-sync`
-- Next run: `ssh -t finance sudo systemctl list-timers finance-sync.timer`
+- Sync logs: `ssh -t finance sudo journalctl -u finance-sync`
+- Web logs: `ssh -t finance 'cd /opt/finance && sudo docker compose logs --tail 50 web'`
+- Next sync: `ssh -t finance sudo systemctl list-timers finance-sync.timer`
 - Sync now: `ssh -t finance sudo systemctl start finance-sync`
-- Update: commit, then `scripts/sync-deploy.sh` again. It keeps the previous
+- Update: commit, then `scripts/deploy.sh` again. It keeps the previous
   version's images, so rolling back is: set `FINANCE_VERSION` in
-  `/opt/finance/.env` back to the old version, then run the sync.
+  `/opt/finance/.env` back to the old version, then
+  `cd /opt/finance && sudo docker compose up -d web` and run the sync.
 
 ## Data
 

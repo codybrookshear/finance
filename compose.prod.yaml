@@ -1,6 +1,6 @@
 # Production overrides, on the droplet (/opt/finance; its .env selects this
 # file). Images are built on the workstation from a committed revision and
-# loaded over SSH by scripts/sync-deploy.sh, so nothing is built here and the
+# loaded over SSH by scripts/deploy.sh, so nothing is built here and the
 # only image pulled from a registry is the digest-pinned Postgres.
 services:
   migrate:
@@ -11,8 +11,19 @@ services:
     build: !reset null
     image: finance-sync:${FINANCE_VERSION:?}
     pull_policy: never
+  # Serves a Unix socket in /run/finance-web for cloudflared (on the host) and
+  # checks the Cloudflare Access login on every request, against signing keys
+  # the finance-access-keys timer keeps in /etc/finance/access.
   web:
     build: !reset null
     image: finance-web:${FINANCE_VERSION:?}
     pull_policy: never
-    profiles: [web]   # not deployed yet
+    environment:
+      WEB_SOCKET: /run/web/web.sock
+      ACCESS_TEAM_DOMAIN: brookshear.cloudflareaccess.com
+      ACCESS_AUD: REPLACE_ME_WEB_AUD          # Access app for finance.brookshear.party
+      ACCESS_ALLOWED_EMAILS: REPLACE_ME_EMAIL
+      ACCESS_CERTS_FILE: /run/access/certs.json
+    volumes:
+      - /run/finance-web:/run/web
+      - /etc/finance/access:/run/access:ro

@@ -20,7 +20,7 @@ Single user (me). Security is the top priority; prefer fewer dependencies.
   compose mounts them as file-backed secrets under /run/secrets, never env vars
   (env-sourced Compose secrets don't work with read_only services).
 - Images: built on the workstation from the committed HEAD (`git archive`) and copied over
-  SSH by `scripts/sync-deploy.sh`. The repo is private, so there's no registry and no
+  SSH by `scripts/deploy.sh`. The repo is private, so there's no registry and no
   GitHub token on the droplet. Postgres is the only pulled image (digest-pinned).
 
 ## Security invariants (don't break these)
@@ -52,7 +52,7 @@ Single user (me). Security is the top priority; prefer fewer dependencies.
 - Web UI (search, monthly net income/spending, net worth, categorization with learned
   guesses, transfer detection) runs locally via `make dev`
   (http://<dev box>:8080, demo data, Access check off). Not deployed yet.
-- Postgres 18 (volume mounted at /var/lib/postgresql). Deploy: `scripts/sync-deploy.sh`
+- Postgres 18 (volume mounted at /var/lib/postgresql). Deploy: `scripts/deploy.sh`
   (`deploy/finance/README.md`); secrets in /etc/finance/secrets.
 - Next: deploy web (socket, Access app, signing-key refresh timer) → MCP server.
 

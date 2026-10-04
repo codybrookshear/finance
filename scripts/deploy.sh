@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
-# sync-deploy.sh: deploy the sync stack (Postgres, migrations, SimpleFIN sync
-# on a timer) to the droplet. Run on your workstation:
+# deploy.sh: deploy the app to the droplet: Postgres, migrations, the
+# SimpleFIN sync on a timer, and the web UI. Run on your workstation:
 #
 #   eval "$(op signin)"
-#   scripts/sync-deploy.sh            # deploys HEAD to the `finance` SSH alias
+#   scripts/deploy.sh                 # deploys HEAD to the `finance` SSH alias
 #
-# Builds the migrate and sync images from the committed HEAD (not the files on
-# disk), ships them over SSH with the compose files and systemd units, sends
-# the production secrets from env/prod.env straight from 1Password (never
-# written to disk here), and runs scripts/sync-install.sh with sudo there.
+# Builds the migrate, sync and web images from the committed HEAD (not the
+# files on disk), ships them over SSH with the compose files and systemd
+# units, sends the production secrets from env/prod.env straight from
+# 1Password (never written to disk here), and runs scripts/deploy-install.sh
+# with sudo there. (cloudflared's config is deployed separately, by
+# scripts/tunnel-deploy.sh.)
 # The repo is private, so there's no registry: the droplet needs no GitHub
 # credentials.
 
@@ -24,6 +26,9 @@ die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
 cd "$(dirname "$0")/.."
 [[ -z "$(git status --porcelain)" ]] || die "commit your changes first: images are built from HEAD"
+if grep -qE '^[^#]*REPLACE_ME' compose.prod.yaml; then
+  die "fill in the REPLACE_ME values in compose.prod.yaml first (see deploy/finance/README.md)"
+fi
 version="$(git rev-parse --short=12 HEAD)"
 command -v docker >/dev/null || die "docker not found"
 command -v op >/dev/null || die "1Password CLI (op) not found"
@@ -42,20 +47,21 @@ done <"$ENV_FILE"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 echo "Building images for $version..."
-for cmd in migrate sync; do
+for cmd in migrate sync web; do
   git archive --format=tar HEAD |
     docker build -q --build-arg CMD="$cmd" \
       --label org.opencontainers.image.revision="$(git rev-parse HEAD)" \
       -t "finance-$cmd:$version" - >/dev/null
 done
-docker save "finance-migrate:$version" "finance-sync:$version" | gzip >"$work/images.tar.gz"
+docker save "finance-migrate:$version" "finance-sync:$version" "finance-web:$version" | gzip >"$work/images.tar.gz"
 
 dir="$(ssh "$DEST" 'mktemp -d')"
 [[ "$dir" =~ ^/tmp/tmp\.[A-Za-z0-9]+$ ]] || die "unexpected remote temp dir: $dir"
 echo "Copying to the droplet..."
 scp -q "$work/images.tar.gz" compose.yaml compose.prod.yaml db/init/01-roles.sh \
   deploy/finance/finance-sync.service deploy/finance/finance-sync.timer \
-  scripts/sync-install.sh "$DEST:$dir/"
+  deploy/finance/finance-access-keys.service deploy/finance/finance-access-keys.timer \
+  deploy/finance/finance-web.tmpfiles scripts/deploy-install.sh "$DEST:$dir/"
 
 # Held in memory only; printf is a shell builtin, so they never show up in ps.
 ssh "$DEST" "umask 077 && mkdir $dir/secrets"
@@ -68,6 +74,6 @@ for s in "${secrets[@]}"; do
 done
 
 rc=0
-ssh -t "$DEST" "sudo bash $dir/sync-install.sh $dir $version" || rc=$?
+ssh -t "$DEST" "sudo bash $dir/deploy-install.sh $dir $version" || rc=$?
 ssh "$DEST" "rm -rf $dir" || true
 exit "$rc"
