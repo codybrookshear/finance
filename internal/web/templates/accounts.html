@@ -2,8 +2,7 @@
 
 {{define "head"}}<link rel="stylesheet" href="{{asset "vendor/uPlot.min.css"}}">{{end}}
 
-{{define "scripts"}}<script src="{{asset "vendor/uPlot.iife.min.js"}}"></script>
-<script src="{{asset "vendor/htmx.min.js"}}"></script>{{end}}
+{{define "scripts"}}<script src="{{asset "vendor/uPlot.iife.min.js"}}"></script>{{end}}
 
 {{define "content" -}}
 <h1>Accounts</h1>
@@ -16,32 +15,18 @@
 <p class="note">The chart builds up one day per sync, starting with the first. Check back tomorrow.</p>
 {{- end}}
 <ul class="list accounts">
-  {{- $group := "\x00"}}
+  {{- $org := "\x00"}}
   {{- range .Accounts}}
-  {{- if ne .Group $group}}{{$group = .Group}}
+  {{- if ne .Org $org}}{{$org = .Org}}
   <li class="group">
-    <span class="what">{{.Group}}</span>
-    {{- if not .Hidden}}
+    <span class="what">{{if .Org}}{{.Org}}{{else}}Other accounts{{end}}</span>
     <span class="amt{{if neg .OrgTotal}} out{{end}}">{{money .OrgTotal .Currency}}</span>
-    {{- end}}
   </li>
   {{- end}}
-  <li class="acct{{if .Hidden}} hidden{{end}}">
-    <details>
-      <summary>
-        <span class="what">{{.Name}}</span>
-        <span class="amt{{if neg .Balance}} out{{end}}">{{money .Balance .Currency}}</span>
-        <span class="meta">
-          {{- if .DupOf}}<span class="warn">also under {{.DupOf}}: hide one so it isn't counted twice</span> · {{end}}
-          {{- if .Hidden}}{{.Org}} · {{else if not .InNetWorth}}not in net worth · {{end}}as of {{stamp .BalanceAt}}</span>
-      </summary>
-      <form class="settings" hx-post="/accounts/settings" hx-trigger="change, submit" hx-swap="none">
-        <input type="hidden" name="id" value="{{.ID}}">
-        <label>Name <input name="name" value="{{.DisplayName}}" placeholder="{{.OriginalName}}" maxlength="100" autocomplete="off" enterkeyhint="done"></label>
-        <label class="check"><input type="checkbox" name="networth" value="on"{{if .InNetWorth}} checked{{end}}> Count in net worth</label>
-        <label class="check"><input type="checkbox" name="hidden" value="on"{{if .Hidden}} checked{{end}}> Hide this account and its transactions</label>
-      </form>
-    </details>
+  <li>
+    <span class="what">{{.Name}}</span>
+    <span class="amt{{if neg .Balance}} out{{end}}">{{money .Balance .Currency}}</span>
+    <span class="meta">{{if .AlsoUnder}}also under {{.AlsoUnder}} · {{end}}{{if not .InNetWorth}}not in net worth · {{end}}as of {{stamp .BalanceAt}}</span>
   </li>
   {{- else}}
   <li class="empty">No accounts yet.</li>

@@ -16,22 +16,18 @@ import (
 // Read-only queries for the UI. They run as finance_web, which can only
 // SELECT. Amounts come back as round(x, 2)::text and stay strings.
 
+// Account is a visible account: not hidden, and not a duplicate copy of
+// another (see store.MarkDuplicateAccounts).
 type Account struct {
 	ID, Name, Org, Currency, Balance string
 	BalanceAt                        *time.Time
 	InNetWorth                       bool
 	OrgTotal                         string // the institution's accounts counted in net worth
+	AlsoUnder                        string // institutions whose duplicate copies were folded into this one
 }
 
-// AccountSettings is an account as the Accounts page shows and edits it.
-type AccountSettings struct {
-	Account
-	DisplayName  string // your name for it ("" = SimpleFIN's)
-	OriginalName string // SimpleFIN's name
-	Hidden       bool
-	Group        string // the heading it's listed under: institution, or "Hidden"
-	DupOf        string // institution of a likely duplicate (same name and balance), if any
-}
+// shownAccount is the SQL test for accounts the app shows (alias a).
+const shownAccount = `NOT a.hidden AND a.duplicate_of IS NULL`
 
 type Txn struct {
 	AccountID, ID, Account, Currency string
@@ -149,18 +145,20 @@ type DB struct{ Pool *pgxpool.Pool }
 
 func (db *DB) Accounts(ctx context.Context) ([]Account, error) {
 	rows, err := db.Pool.Query(ctx, `
-		SELECT id, coalesce(display_name, name), org_name, currency,
-		       round(balance, 2)::text, balance_at, include_in_net_worth,
-		       round(coalesce(sum(balance) FILTER (WHERE include_in_net_worth)
-		                      OVER (PARTITION BY org_name), 0), 2)::text
-		FROM accounts WHERE NOT hidden
-		ORDER BY lower(org_name), include_in_net_worth DESC, lower(coalesce(display_name, name))`)
+		SELECT a.id, coalesce(a.display_name, a.name), a.org_name, a.currency,
+		       round(a.balance, 2)::text, a.balance_at, a.include_in_net_worth,
+		       round(coalesce(sum(a.balance) FILTER (WHERE a.include_in_net_worth)
+		                      OVER (PARTITION BY a.org_name), 0), 2)::text,
+		       coalesce((SELECT string_agg(DISTINCT d.org_name, ', ') FROM accounts d
+		                 WHERE d.duplicate_of = a.id AND d.org_name <> a.org_name), '')
+		FROM accounts a WHERE `+shownAccount+`
+		ORDER BY lower(a.org_name), a.include_in_net_worth DESC, lower(coalesce(a.display_name, a.name))`)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Account, error) {
 		var a Account
-		err := r.Scan(&a.ID, &a.Name, &a.Org, &a.Currency, &a.Balance, &a.BalanceAt, &a.InNetWorth, &a.OrgTotal)
+		err := r.Scan(&a.ID, &a.Name, &a.Org, &a.Currency, &a.Balance, &a.BalanceAt, &a.InNetWorth, &a.OrgTotal, &a.AlsoUnder)
 		return a, err
 	})
 }
@@ -173,7 +171,7 @@ const (
 		LEFT JOIN categories c ON c.id = t.category_id`
 	// $1 query, $2 LIKE pattern, $3 amount (or NULL), $4 account, $5 from, $6 to, $7 category
 	txnWhere = `
-		WHERE NOT a.hidden
+		WHERE ` + shownAccount + `
 		  AND ($1::text = ''
 		       OR t.search @@ websearch_to_tsquery('simple', $1)
 		       OR t.description ILIKE $2 OR t.payee ILIKE $2 OR t.memo ILIKE $2 OR t.note ILIKE $2
@@ -252,7 +250,7 @@ func scanTxn(r pgx.CollectableRow) (Txn, error) {
 // account is hidden).
 func (db *DB) Txn(ctx context.Context, accountID, id string) (Txn, error) {
 	rows, err := db.Pool.Query(ctx, `SELECT `+txnCols+txnFrom+`
-		WHERE NOT a.hidden AND t.account_id = $1 AND t.id = $2`, accountID, id)
+		WHERE `+shownAccount+` AND t.account_id = $1 AND t.id = $2`, accountID, id)
 	if err != nil {
 		return Txn{}, err
 	}
@@ -276,7 +274,7 @@ func (db *DB) TxnsByKey(ctx context.Context, keys []TxnKey) ([]Txn, error) {
 		accounts[i], ids[i] = k.AccountID, k.ID
 	}
 	rows, err := db.Pool.Query(ctx, `SELECT `+txnCols+txnFrom+`
-		WHERE NOT a.hidden AND (t.account_id, t.id) IN (SELECT * FROM unnest($1::text[], $2::text[]))
+		WHERE `+shownAccount+` AND (t.account_id, t.id) IN (SELECT * FROM unnest($1::text[], $2::text[]))
 		ORDER BY 5 DESC`, accounts, ids)
 	if err != nil {
 		return nil, err
@@ -327,7 +325,7 @@ func (db *DB) Spending(ctx context.Context, tz string, since time.Time) ([]Month
 			       coalesce(c.name, 'Uncategorized') AS category,
 			       c.id AS category_id, coalesce(c.emoji, '') AS emoji,
 			       t.amount`+txnFrom+`
-			WHERE NOT a.hidden AND NOT t.pending AND NOT t.is_transfer
+			WHERE `+shownAccount+` AND NOT t.pending AND NOT t.is_transfer
 			  AND coalesce(c.kind, '') <> 'transfer'
 			  AND `+txnSortAt+` >= $2
 		)
@@ -379,7 +377,7 @@ type Point struct {
 // net worth. Days without a snapshot carry the account's last known balance.
 func (db *DB) NetWorth(ctx context.Context) ([]Point, error) {
 	rows, err := db.Pool.Query(ctx, `
-		WITH acct AS (SELECT id FROM accounts WHERE include_in_net_worth AND NOT hidden),
+		WITH acct AS (SELECT a.id FROM accounts a WHERE a.include_in_net_worth AND `+shownAccount+`),
 		days AS (
 			SELECT generate_series(min(as_of), max(as_of), interval '1 day')::date AS d
 			FROM balance_snapshots WHERE account_id IN (SELECT id FROM acct)
@@ -405,54 +403,13 @@ func (db *DB) NetWorth(ctx context.Context) ([]Point, error) {
 // NetWorthNow totals current balances of accounts counted in net worth.
 func (db *DB) NetWorthNow(ctx context.Context) ([]Total, error) {
 	rows, err := db.Pool.Query(ctx, `
-		SELECT currency, round(sum(balance), 2)::text FROM accounts
-		WHERE include_in_net_worth AND NOT hidden
-		GROUP BY currency ORDER BY currency`)
+		SELECT a.currency, round(sum(a.balance), 2)::text FROM accounts a
+		WHERE a.include_in_net_worth AND `+shownAccount+`
+		GROUP BY a.currency ORDER BY a.currency`)
 	if err != nil {
 		return nil, fmt.Errorf("net worth: %w", err)
 	}
 	return pgx.CollectRows(rows, pgx.RowToStructByPos[Total])
-}
-
-// AllAccounts lists every account for the Accounts page, hidden ones last.
-// A visible account with the same name, currency and balance as another
-// visible account under a different connection is flagged as a likely
-// duplicate: typically a joint account that two bank logins both report.
-func (db *DB) AllAccounts(ctx context.Context) ([]AccountSettings, error) {
-	rows, err := db.Pool.Query(ctx, `
-		SELECT a.id, coalesce(a.display_name, a.name), a.org_name, a.currency,
-		       round(a.balance, 2)::text, a.balance_at, a.include_in_net_worth,
-		       round(coalesce(sum(a.balance) FILTER (WHERE a.include_in_net_worth AND NOT a.hidden)
-		                      OVER (PARTITION BY a.org_name), 0), 2)::text,
-		       coalesce(a.display_name, ''), a.name, a.hidden,
-		       coalesce((SELECT o.org_name FROM accounts o
-		                 WHERE o.id <> a.id AND NOT o.hidden AND NOT a.hidden
-		                   AND o.name = a.name AND o.currency = a.currency AND o.balance = a.balance
-		                   AND coalesce(o.connection_id, '') <> coalesce(a.connection_id, '')
-		                 ORDER BY o.org_name LIMIT 1), '')
-		FROM accounts a
-		ORDER BY a.hidden, lower(a.org_name), a.include_in_net_worth DESC,
-		         lower(coalesce(a.display_name, a.name))`)
-	if err != nil {
-		return nil, err
-	}
-	accts, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (AccountSettings, error) {
-		var a AccountSettings
-		err := r.Scan(&a.ID, &a.Name, &a.Org, &a.Currency, &a.Balance, &a.BalanceAt, &a.InNetWorth,
-			&a.OrgTotal, &a.DisplayName, &a.OriginalName, &a.Hidden, &a.DupOf)
-		return a, err
-	})
-	for i := range accts {
-		switch {
-		case accts[i].Hidden:
-			accts[i].Group = "Hidden"
-		case accts[i].Org == "":
-			accts[i].Group = "Other accounts"
-		default:
-			accts[i].Group = accts[i].Org
-		}
-	}
-	return accts, err
 }
 
 // LastSync is when the last successful sync finished (nil if never).

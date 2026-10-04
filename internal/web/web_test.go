@@ -19,6 +19,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"finance/internal/store"
 )
 
 // The DB-backed tests need a migrated database (make test provides one). They
@@ -364,8 +366,8 @@ func TestPages(t *testing.T) {
 				t.Errorf("missing %q", want)
 			}
 		}
-		if !regexp.MustCompile(`(?s)<li class="group">\s*<span class="what">Hidden</span>.*Closed`).MatchString(b) {
-			t.Error("the hidden account should be listed under Hidden")
+		if strings.Contains(b, "Closed") {
+			t.Error("hidden account shown")
 		}
 	})
 }
@@ -543,7 +545,7 @@ func page(t *testing.T, h http.Handler, target string) string {
 	return b
 }
 
-func TestAccountSettings(t *testing.T) {
+func TestDuplicateAccounts(t *testing.T) {
 	db := seed(t)
 	ctx := context.Background()
 	owner, err := pgxpool.New(ctx, os.Getenv("TEST_OWNER_DATABASE_URL"))
@@ -551,13 +553,14 @@ func TestAccountSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer owner.Close()
-	// A joint account that two bank logins both report: same name and
-	// balance, different connection.
+	// A joint account that two bank logins both report.
 	for _, sql := range []string{
-		`INSERT INTO connections (id, name) VALUES ('v1', 'Login A'), ('v2', 'Login B')`,
-		`INSERT INTO accounts (id, connection_id, org_name, name, balance, balance_at) VALUES
-			('joint-a', 'v1', 'Login A', 'Brokerage (1234)', 5000, now()),
-			('joint-b', 'v2', 'Login B', 'Brokerage (1234)', 5000, now())`,
+		`INSERT INTO connections (id, name, org_url) VALUES
+			('v1', 'Login A', 'https://invest.example.com'),
+			('v2', 'Login B', 'https://invest.example.com/')`,
+		`INSERT INTO accounts (id, connection_id, org_name, name, balance, balance_at, created_at) VALUES
+			('joint-a', 'v1', 'Login A', 'Brokerage (1234)', 5000, now(), now() - interval '1 hour'),
+			('joint-b', 'v2', 'Login B', 'Brokerage (1234)', 5000.10, now(), now())`,
 		`INSERT INTO transactions (account_id, id, posted_at, amount, description) VALUES
 			('joint-a', 'div', now(), 12.00, 'DIVIDEND'), ('joint-b', 'div', now(), 12.00, 'DIVIDEND')`,
 	} {
@@ -570,61 +573,24 @@ func TestAccountSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := srv.Handler()
-	save := func(form url.Values) *http.Response {
-		t.Helper()
-		r := httptest.NewRequest(http.MethodPost, "/accounts/settings", strings.NewReader(form.Encode()))
-		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		r.Header.Set("Sec-Fetch-Site", "same-origin")
-		w := httptest.NewRecorder()
-		h.ServeHTTP(w, r)
-		return w.Result()
-	}
 
+	if b := page(t, h, "/transactions?q=dividend"); !strings.Contains(b, "2 transactions") {
+		t.Error("before marking, both copies show")
+	}
+	if n, err := (&store.Store{Pool: owner}).MarkDuplicateAccounts(ctx); err != nil || n != 1 {
+		t.Fatalf("marked %d (%v), want 1", n, err)
+	}
 	b := page(t, h, "/accounts")
-	for _, want := range []string{"also under Login A", "also under Login B", "$10,750.25"} {
+	// Counted once (5,000 + the seed's 750.25), listed once, under the first copy's bank.
+	for _, want := range []string{"$5,750.25", "also under Login B", "Login A"} {
 		if !strings.Contains(b, want) {
-			t.Errorf("before: missing %q", want)
+			t.Errorf("missing %q", want)
 		}
 	}
-	if b := page(t, h, "/transactions?q=dividend"); !strings.Contains(b, "2 transactions") {
-		t.Error("both copies' transactions should show before hiding")
-	}
-
-	res := save(url.Values{"id": {"joint-b"}, "networth": {"on"}, "hidden": {"on"}})
-	if res.StatusCode != http.StatusNoContent || res.Header.Get("HX-Refresh") != "true" {
-		t.Fatalf("hide: %d", res.StatusCode)
-	}
-	b = page(t, h, "/accounts")
-	if strings.Contains(b, "also under") || !strings.Contains(b, "$5,750.25") {
-		t.Error("after hiding one copy: no duplicate flag, counted once")
+	if strings.Count(b, "Brokerage (1234)") != 1 {
+		t.Error("the joint account should be listed once")
 	}
 	if b := page(t, h, "/transactions?q=dividend"); !strings.Contains(b, "1 transaction ") {
-		t.Error("the hidden copy's transactions should be gone")
-	}
-
-	// Rename, and leave it out of net worth.
-	save(url.Values{"id": {"joint-a"}, "name": {"Joint brokerage"}})
-	b = page(t, h, "/accounts")
-	if !strings.Contains(b, `value="Joint brokerage" placeholder="Brokerage (1234)"`) || !strings.Contains(b, "$750.25") {
-		t.Error("rename / not in net worth")
-	}
-	// Unhide and back to SimpleFIN's name.
-	save(url.Values{"id": {"joint-b"}, "networth": {"on"}})
-	if b := page(t, h, "/transactions?q=dividend"); !strings.Contains(b, "2 transactions") {
-		t.Error("unhiding should bring the transactions back")
-	}
-
-	if res := save(url.Values{"id": {"nope"}}); res.StatusCode != http.StatusNotFound {
-		t.Errorf("unknown account: %d", res.StatusCode)
-	}
-	if res := save(url.Values{"id": {"joint-a"}, "name": {strings.Repeat("x", 101)}}); res.StatusCode != http.StatusBadRequest {
-		t.Errorf("long name: %d", res.StatusCode)
-	}
-	err = db.edit(ctx, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `UPDATE accounts SET balance = 0 WHERE id = 'joint-a'`)
-		return err
-	})
-	if err == nil || !strings.Contains(err.Error(), "permission denied") {
-		t.Errorf("finance_edit changed a balance: %v", err)
+		t.Error("the duplicate's transactions should be gone")
 	}
 }

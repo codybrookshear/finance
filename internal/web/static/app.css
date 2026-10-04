@@ -278,14 +278,6 @@ details.month p { margin: 0; padding: 0.6rem 0.8rem; font-size: 0.9rem; }
   letter-spacing: 0.02em;
 }
 
-.accounts > li.acct { padding: 0; display: block; }
-.accounts > li.acct summary { padding: 0.65rem 0.8rem; }
-.accounts > li.hidden .what, .accounts > li.hidden .amt { color: var(--muted); }
-.accounts .warn { color: var(--pending); }
-form.settings { display: grid; gap: 0.55rem; padding: 0 0.8rem 0.85rem; font-size: 0.9rem; }
-form.settings label { display: grid; gap: 0.25rem; color: var(--muted); }
-form.settings label.check { display: flex; gap: 0.5rem; align-items: center; color: var(--fg); }
-
 /* Net worth chart */
 .chart { width: 100%; min-height: 240px; color: var(--accent); margin-bottom: 1rem; }
 .chart .u-axis { color: var(--muted); }

@@ -154,3 +154,34 @@ func (s *Store) Categorize(ctx context.Context) (Categorized, error) {
 		Scan(&c.Learned, &c.Cleared, &c.Transfers)
 	return c, err
 }
+
+// MarkDuplicateAccounts points each account that's a second copy of another
+// (a joint account reported by two bank logins) at the first copy, and
+// clears the mark when that no longer holds. Same account = same name and
+// currency, different connection, and either the same bank (org_url host) or,
+// when a connection has no org_url, the same non-zero balance. The earliest
+// seen copy is the one kept. Returns how many accounts changed.
+func (s *Store) MarkDuplicateAccounts(ctx context.Context) (int, error) {
+	tag, err := s.Pool.Exec(ctx, `
+		WITH k AS (
+			SELECT a.id, a.created_at, lower(btrim(a.name)) AS name, a.currency, a.balance,
+			       coalesce(a.connection_id, '') AS conn,
+			       nullif(lower(regexp_replace(coalesce(c.org_url, ''),
+			                                   '^[a-z]+://(www\.)?([^/:]*).*$', '\2', 'i')), '') AS bank
+			FROM accounts a LEFT JOIN connections c ON c.id = a.connection_id
+		),
+		keeper AS (
+			SELECT k.id,
+			       (SELECT o.id FROM k o
+			        WHERE o.name = k.name AND o.currency = k.currency AND o.conn <> k.conn
+			          AND (o.bank = k.bank
+			               OR ((o.bank IS NULL OR k.bank IS NULL) AND o.balance = k.balance AND k.balance <> 0))
+			          AND (o.created_at, o.id) < (k.created_at, k.id)
+			        ORDER BY o.created_at, o.id LIMIT 1) AS keep
+			FROM k
+		)
+		UPDATE accounts a SET duplicate_of = keeper.keep
+		FROM keeper
+		WHERE keeper.id = a.id AND a.duplicate_of IS DISTINCT FROM keeper.keep`)
+	return int(tag.RowsAffected()), err
+}

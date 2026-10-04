@@ -178,3 +178,68 @@ func TestCategorize(t *testing.T) {
 		}
 	}
 }
+
+func TestMarkDuplicateAccounts(t *testing.T) {
+	syncURL, ownerURL := os.Getenv("TEST_DATABASE_URL"), os.Getenv("TEST_OWNER_DATABASE_URL")
+	if syncURL == "" || ownerURL == "" {
+		t.Skip("TEST_DATABASE_URL / TEST_OWNER_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	owner, err := pgxpool.New(ctx, ownerURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Close()
+	syncPool, err := pgxpool.New(ctx, syncURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer syncPool.Close()
+	for _, sql := range []string{`DELETE FROM balance_snapshots`, `DELETE FROM categorizations`,
+		`DELETE FROM transactions`, `DELETE FROM accounts`, `DELETE FROM connections`,
+		`INSERT INTO connections (id, name, org_url) VALUES
+			('v1', 'Login A', 'https://invest.example.com'),
+			('v2', 'Login B', 'https://www.invest.example.com/login'),
+			('b1', 'Bank One', ''), ('b2', 'Bank Two', ''), ('c1', 'Chase', 'https://chase.com')`,
+		`INSERT INTO accounts (id, connection_id, name, balance, created_at) VALUES
+			('joint-a', 'v1', 'Brokerage (1234)', 5000, now() - interval '2 hours'),
+			('joint-b', 'v2', 'Brokerage (1234)', 5001, now()),     -- same bank: balance may differ
+			('sav-1',   'b1', 'Savings', 100, now() - interval '1 hour'),
+			('sav-2',   'b2', 'Savings', 100, now()),               -- no bank URL: same non-zero balance
+			('empty-1', 'b1', 'Checking', 0, now() - interval '1 hour'),
+			('empty-2', 'b2', 'Checking', 0, now()),                -- zero balances prove nothing
+			('chk-1',   'v1', 'Checking', 0, now()),
+			('chk-2',   'c1', 'Checking', 0, now())                 -- different banks`,
+	} {
+		if _, err := owner.Exec(ctx, sql); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+	st := &Store{Pool: syncPool} // the sync role can do this
+	if n, err := st.MarkDuplicateAccounts(ctx); err != nil || n != 2 {
+		t.Fatalf("marked %d (%v), want 2", n, err)
+	}
+	dups := map[string]string{}
+	rows, _ := owner.Query(ctx, `SELECT id, coalesce(duplicate_of, '') FROM accounts`)
+	for rows.Next() {
+		var id, of string
+		rows.Scan(&id, &of)
+		dups[id] = of
+	}
+	for id, want := range map[string]string{"joint-b": "joint-a", "sav-2": "sav-1", "joint-a": "", "sav-1": "",
+		"empty-1": "", "empty-2": "", "chk-1": "", "chk-2": ""} {
+		if dups[id] != want {
+			t.Errorf("%s: duplicate_of = %q, want %q", id, dups[id], want)
+		}
+	}
+	if n, err := st.MarkDuplicateAccounts(ctx); err != nil || n != 0 {
+		t.Errorf("second run changed %d (%v)", n, err)
+	}
+	// If the copies stop matching, the mark is cleared.
+	if _, err := owner.Exec(ctx, `UPDATE accounts SET balance = 99 WHERE id = 'sav-2'`); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := st.MarkDuplicateAccounts(ctx); err != nil || n != 1 {
+		t.Errorf("unmarking changed %d (%v), want 1", n, err)
+	}
+}

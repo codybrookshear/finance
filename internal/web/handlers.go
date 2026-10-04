@@ -215,7 +215,7 @@ func (s *Server) accounts(w http.ResponseWriter, r *http.Request) {
 	p := struct {
 		base
 		Totals                 []Total
-		Accounts               []AccountSettings
+		Accounts               []Account
 		ChartDays, ChartValues string // comma-separated, for app.js
 	}{}
 	var err error
@@ -223,7 +223,7 @@ func (s *Server) accounts(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	if p.Accounts, err = s.cfg.DB.AllAccounts(ctx); err != nil {
+	if p.Accounts, err = s.cfg.DB.Accounts(ctx); err != nil {
 		s.fail(w, r, err)
 		return
 	}

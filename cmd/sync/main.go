@@ -87,6 +87,12 @@ func run(ctx context.Context, log *slog.Logger) error {
 	log.Info("sync complete", "requests", res.Requests, "new_accounts", res.NewAccounts, "transactions_seen", res.TxnsSeen,
 		"stale_pending_deleted", res.StaleDeleted, "snapshots", res.Snapshots)
 
+	if n, err := s.Store.MarkDuplicateAccounts(ctx); err != nil {
+		return fmt.Errorf("mark duplicate accounts: %w", err)
+	} else if n > 0 {
+		log.Info("duplicate accounts marked or cleared", "accounts", n)
+	}
+
 	c, err := s.Store.Categorize(ctx)
 	if err != nil {
 		return fmt.Errorf("categorize: %w", err)
