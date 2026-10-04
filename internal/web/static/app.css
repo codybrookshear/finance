@@ -116,6 +116,18 @@ input, select, button {
 
 input[type="checkbox"] { width: auto; margin: 0; }
 
+/* Our own dropdown arrow, with room around it: browsers draw theirs against
+   the edge, each differently. A file, since the CSP allows no data: images. */
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 2.3rem;
+  background-image: url("chevron.svg");
+  background-repeat: no-repeat;
+  background-position: right 0.85rem center;
+  background-size: 0.75rem;
+}
+
 /* Safari on iPhone draws date inputs natively, at a fixed width, with no
    placeholder; this makes them fill their column, and the labels say which
    is which. */
