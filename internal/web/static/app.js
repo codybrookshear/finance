@@ -1,5 +1,6 @@
 // The app's only script (htmx aside): draws the net worth chart, keeps the
-// transaction date filter a valid range, and makes iPhone's date "Reset" clear it.
+// transaction date filter a valid range, makes iPhone's date "Reset" clear it,
+// and has the Spending page remember which months were open and where you were.
 //
 // Chart data comes from data-* attributes (never inline script), as
 // comma-separated days (YYYY-MM-DD) and decimal strings. Converting to Number
@@ -41,6 +42,35 @@
   }
 
   document.addEventListener("DOMContentLoaded", drawNetWorth);
+
+  // Spending: remember the open months and the scroll position, so going to a
+  // category's transactions and back (or to another tab and back) puts you
+  // where you were. Pages are no-store, so the browser reloads rather than
+  // restoring them. sessionStorage: this tab only, gone when it closes; may
+  // be unavailable, and then the page just opens as usual.
+  document.addEventListener("DOMContentLoaded", () => {
+    const months = Array.from(document.querySelectorAll("details.month[data-month]"));
+    if (months.length === 0) return;
+    const key = "spending-view";
+    let saved = null;
+    try { saved = JSON.parse(sessionStorage.getItem(key) || "null"); } catch (e) { /* unavailable */ }
+    if (saved && Array.isArray(saved.open)) {
+      if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+      for (const d of months) d.open = saved.open.includes(d.dataset.month);
+      window.scrollTo(0, Number(saved.y) || 0);
+    }
+    const save = () => {
+      try {
+        sessionStorage.setItem(key, JSON.stringify({
+          open: months.filter((d) => d.open).map((d) => d.dataset.month),
+          y: Math.round(window.scrollY),
+        }));
+      } catch (e) { /* unavailable */ }
+    };
+    for (const d of months) d.addEventListener("toggle", save);
+    document.addEventListener("click", (e) => { if (e.target.closest("a")) save(); }, true);
+    window.addEventListener("pagehide", save);
+  });
 
   // Date filter. Each field remembers the value last searched for (data-sent).
   //

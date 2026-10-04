@@ -2,12 +2,8 @@
 
 {{define "content" -}}
 <h1>Spending</h1>
-<p class="note">Net income (income minus spending) for each of the last 12 months,
-from posted transactions. Transfers between your own accounts are left out.
-Categorize a few transactions and similar ones are filled in automatically,
-favoring your most recent choices.</p>
 {{range $i, $m := .Months -}}
-<details class="month"{{if eq $i 0}} open{{end}}>
+<details class="month" data-month="{{.YearMonth}}"{{if eq $i 0}} open{{end}}>
   <summary>
     <span class="what">{{monthName .YearMonth}}</span>
     <span class="amt{{if neg .Net}} out{{else}} in{{end}}" title="Net income">{{money .Net ""}}</span>

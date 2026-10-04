@@ -63,14 +63,6 @@ header nav a {
   font-weight: 600;
 }
 
-header nav a.logo {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  padding: 0 0.35rem 0 0.75rem;
-}
-header nav a.logo img { display: block; border-radius: 7px; }
-
 header nav a[aria-current="page"] {
   color: var(--fg);
   box-shadow: inset 0 -2px 0 var(--accent);
