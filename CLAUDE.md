@@ -27,10 +27,12 @@ Single user (me). Security is the top priority; prefer fewer dependencies.
 - SimpleFIN access URL is held only by the `sync` container; never logged or put in errors.
 - DB roles: finance_owner (migrations only), finance_sync (bank columns only, via
   column-level grants), finance_web (read-only; edits only via `SET LOCAL ROLE finance_edit`,
-  which it doesn't inherit), finance_edit (category/transfer/note columns + rules),
-  finance_rules (owns `categorize()`, category columns only). New tables need explicit grants
-  in a migration.
-- Categories set by hand ('manual'/'claude') are never changed by rules or detection.
+  which it doesn't inherit), finance_edit (category/transfer/note columns),
+  finance_categorizer (owns `categorize()` + the history trigger; category columns and
+  appending to `categorizations` only). New tables need explicit grants in a migration.
+- Categories set by hand ('manual'/'claude') are never changed by guessing or detection.
+  No rules feature (by choice): guesses are learned from hand-set categories, recent
+  choices weighted more; every hand-set change is logged in `categorizations`.
 - Sync must never overwrite user fields (categories, notes, is_transfer, display names).
 - Postgres stays on the internal Docker network; only `sync` has egress. `web` is on the
   internal network only, so it can't publish a port: in production it listens on a Unix
@@ -46,13 +48,13 @@ Single user (me). Security is the top priority; prefer fewer dependencies.
   port 22 closed at the DO firewall (2026-10-03).
 - Admin workstation is an Ubuntu desktop (not a Mac); droplet SSH key `~/.ssh/finance_ed25519`.
   Domain: `brookshear.party` (Cloudflare Registrar, paid to 2028-10-03); SSH hostname `ssh.brookshear.party`.
-- Web UI (search, monthly net income/spending, net worth, categorization + rules,
-  transfer detection) runs locally via `make dev`
+- Sync deployed to the droplet (2026-10-03), timer 4×/day.
+- Web UI (search, monthly net income/spending, net worth, categorization with learned
+  guesses, transfer detection) runs locally via `make dev`
   (http://<dev box>:8080, demo data, Access check off). Not deployed yet.
-- Postgres 18 (volume mounted at /var/lib/postgresql). Sync deploy tooling ready
-  (`deploy/finance/README.md`): systemd timer 4×/day, secrets in /etc/finance/secrets.
-- Next: first sync deploy → category suggestions from history (pg_trgm) → deploy web
-  (socket, Access app, signing-key refresh timer) → MCP server.
+- Postgres 18 (volume mounted at /var/lib/postgresql). Deploy: `scripts/sync-deploy.sh`
+  (`deploy/finance/README.md`); secrets in /etc/finance/secrets.
+- Next: deploy web (socket, Access app, signing-key refresh timer) → MCP server.
 
 ## Commands
 - `make setup` / `make test` (throwaway Postgres in Docker) / `make dev` / `make demo-claim`

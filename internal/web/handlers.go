@@ -37,7 +37,7 @@ func (s *Server) transactions(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	q := r.URL.Query()
 	p := txnPage{Q: clip(q.Get("q"), 200), Account: clip(q.Get("account"), 200)}
-	if c := q.Get("category"); c == "none" {
+	if c := q.Get("category"); c == "none" || c == "learned" {
 		p.Category = c
 	} else if id, ok := parseID(c); ok && id != nil {
 		p.Category = c

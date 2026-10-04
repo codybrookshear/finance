@@ -18,6 +18,7 @@
     <select name="category" aria-label="Category">
       <option value="">All categories</option>
       <option value="none"{{if eq .Category "none"}} selected{{end}}>Uncategorized</option>
+      <option value="learned"{{if eq .Category "learned"}} selected{{end}}>Guessed</option>
       {{- range .Categories}}
       <option value="{{.ID}}"{{if eq (print .ID) $.Category}} selected{{end}}>{{.Name}}</option>
       {{- end}}
@@ -60,7 +61,7 @@
       <span class="what">{{if .Description}}{{.Description}}{{else}}{{.Payee}}{{end}}</span>
       <span class="amt{{if neg .Amount}} out{{else}} in{{end}}">{{money .Amount .Currency}}</span>
       <span class="meta">{{day .At}} · {{.Account}}
-        {{- if .Category}} · {{.Category}}{{else if .Transfer}} · transfer{{end}}
+        {{- if .Category}} · {{.Category}}{{if eq .Source "learned"}} (guess){{end}}{{else if .Transfer}} · transfer{{end}}
         {{- if .Pending}} · pending{{end}}</span>
     </summary>
     <dl>
@@ -69,6 +70,7 @@
       <dt>Account</dt><dd>{{.Account}}</dd>
       {{- if .Note}}<dt>Note</dt><dd>{{.Note}}</dd>{{end}}
     </dl>
+    {{- if .Message}}<p class="saved" role="status">{{.Message}}</p>{{end}}
     <div class="edit-slot" hx-get="{{.EditURL}}" hx-trigger="intersect once" hx-swap="outerHTML"></div>
   </details>
 </li>
@@ -86,13 +88,11 @@
       {{- end}}
     </select>
   </label>
-  {{- if eq .Txn.Source "rule"}}<p class="hint">Set by a rule.</p>
+  {{- if eq .Txn.Source "learned"}}<p class="hint">Guessed from transactions you categorized like it.</p>
   {{- else if eq .Txn.Source "auto"}}<p class="hint">Detected as a transfer between your accounts.</p>
-  {{- else if .Selected}}<p class="hint">Set by you. Choose Automatic to let rules decide.</p>{{end}}
-  <label class="check"><input type="checkbox" name="rule" value="on"> Also use it for every {{fieldName .RuleField}} containing:</label>
-  <input name="rule_pattern" value="{{.RuleText}}" maxlength="200" aria-label="Text the rule matches">
-  <input type="hidden" name="rule_field" value="{{.RuleField}}">
+  {{- else if .Selected}}<p class="hint">Set by you. Similar transactions follow your choice; choose Automatic to let the app guess.</p>
+  {{- else}}<p class="hint">Pick a category and similar transactions will follow.</p>{{end}}
   <label>Note <input name="note" value="{{.Txn.Note}}" maxlength="500" autocomplete="off"></label>
-  <div class="actions"><button type="submit">Save</button><a href="/rules">Rules</a></div>
+  <div class="actions"><button type="submit">Save</button></div>
 </form>
 {{- end}}

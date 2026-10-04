@@ -25,7 +25,7 @@
 <main>
 {{template "content" .}}
 </main>
-<footer><a href="/rules">Rules</a> · {{.Email}} · last sync {{stamp .LastSync}}</footer>
+<footer>{{.Email}} · last sync {{stamp .LastSync}}</footer>
 {{- block "scripts" .}}{{end}}
 <script src="{{asset "app.js"}}"></script>
 </body>

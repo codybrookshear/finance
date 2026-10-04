@@ -32,7 +32,8 @@ type Txn struct {
 	Source                           string // rule, auto, manual, claude, or "" (none)
 	Note                             string
 	Pending, Transfer                bool
-	Open                             bool // view only: render with details expanded
+	Open                             bool   // view only: render with details expanded
+	Message                          string // view only: shown after saving
 }
 
 // EditURL loads this transaction's edit form.
@@ -61,7 +62,7 @@ type TxnFilter struct {
 	Query     string
 	AccountID string
 	From, To  *time.Time // [From, To)
-	Category  string     // "" all, "none" uncategorized, or a category ID
+	Category  string     // "" all, "none" uncategorized, "learned" guessed, or a category ID
 	After     *Cursor    // next page: rows strictly older than this
 	Limit     int
 }
@@ -135,6 +136,7 @@ const (
 		  AND ($6::timestamptz IS NULL OR ` + txnSortAt + ` < $6)
 		  AND ($7::text = ''
 		       OR ($7 = 'none' AND t.category_id IS NULL AND NOT t.is_transfer)
+		       OR ($7 = 'learned' AND t.category_source = 'learned')
 		       OR t.category_id::text = $7)`
 	txnCols = `t.account_id, t.id, coalesce(a.display_name, a.name), a.currency, ` + txnSortAt + `,
 		round(t.amount, 2)::text, t.description, t.payee, t.memo,

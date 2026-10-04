@@ -176,7 +176,7 @@ func seed(t *testing.T) *DB {
 			t.Fatalf("%s: %v", sql, err)
 		}
 	}
-	for _, s := range []string{`DELETE FROM balance_snapshots`, `DELETE FROM transactions`, `DELETE FROM rules`,
+	for _, s := range []string{`DELETE FROM balance_snapshots`, `DELETE FROM categorizations`, `DELETE FROM transactions`,
 		`DELETE FROM accounts`, `DELETE FROM connections`, `DELETE FROM sync_runs`} {
 		exec(s)
 	}
@@ -404,71 +404,63 @@ func TestEditing(t *testing.T) {
 
 	t.Run("edit form", func(t *testing.T) {
 		b := body(t, get(t, h, "/transactions/edit?account=card&id=groc"))
-		for _, want := range []string{`<select name="category">`, `>Groceries</option>`, "payee containing", `value="Grocer"`} {
+		for _, want := range []string{`<select name="category">`, `>Groceries</option>`, "similar transactions will follow"} {
 			if !strings.Contains(b, want) {
 				t.Errorf("missing %q", want)
 			}
+		}
+		if strings.Contains(b, "rule") {
+			t.Error("rules are gone")
 		}
 		if res := get(t, h, "/transactions/edit?account=old&id=secret"); res.StatusCode != http.StatusNotFound {
 			t.Errorf("hidden account: %d", res.StatusCode)
 		}
 	})
 
-	t.Run("set by hand", func(t *testing.T) {
+	t.Run("similar transactions follow", func(t *testing.T) {
 		res := post("/transactions/edit", url.Values{"account": {"chk"}, "id": {"c00"},
 			"category": {catID("Dining")}, "note": {"with Sam"}})
 		b := body(t, res)
 		if res.StatusCode != http.StatusOK || !strings.Contains(b, "<details open>") ||
-			!strings.Contains(b, "Dining") || !strings.Contains(b, "with Sam") {
+			!strings.Contains(b, "with Sam") || !strings.Contains(b, "Updated the guess for 59 similar transactions") {
 			t.Fatalf("save: %d\n%s", res.StatusCode, b)
 		}
 		if c, src, note := state("c00"); c != "Dining" || src != "manual" || note != "with Sam" {
 			t.Errorf("c00 = %q %q %q", c, src, note)
 		}
-	})
-
-	t.Run("make a rule", func(t *testing.T) {
-		res := post("/transactions/edit", url.Values{"account": {"chk"}, "id": {"c01"},
-			"category": {catID("Dining")}, "rule": {"on"}, "rule_field": {"payee"}, "rule_pattern": {"coffee"}})
-		if res.StatusCode != http.StatusNoContent || res.Header.Get("HX-Refresh") != "true" {
-			t.Fatalf("save with rule: %d", res.StatusCode)
+		if c, src, _ := state("c02"); c != "Dining" || src != "learned" {
+			t.Errorf("c02 = %q %q, want a Dining guess", c, src)
 		}
-		if c, src, _ := state("c02"); c != "Dining" || src != "rule" {
-			t.Errorf("rule didn't apply to history: %q %q", c, src)
-		}
-		if b := body(t, get(t, h, "/rules")); !strings.Contains(b, "payee contains “coffee”") || !strings.Contains(b, "matches 60") {
-			t.Error("rule not listed")
-		}
-		// Back to automatic: the rule now decides.
-		post("/transactions/edit", url.Values{"account": {"chk"}, "id": {"c00"}, "category": {""}, "note": {"with Sam"}})
-		if c, src, _ := state("c00"); c != "Dining" || src != "rule" {
-			t.Errorf("automatic: %q %q", c, src)
-		}
-	})
-
-	t.Run("rules page", func(t *testing.T) {
-		res := post("/rules", url.Values{"field": {"description"}, "pattern": {"GROCERY"}, "category": {catID("Groceries")}})
-		if res.StatusCode != http.StatusSeeOther {
-			t.Fatalf("add rule: %d", res.StatusCode)
-		}
-		if b := page(t, h, "/transactions?category="+catID("Groceries")); !strings.Contains(b, "1 transaction ") || !strings.Contains(b, "Grocery store") {
-			t.Error("category filter")
+		if b := page(t, h, "/transactions?category=learned"); !strings.Contains(b, "59 transactions") || !strings.Contains(b, "Dining (guess)") {
+			t.Error("Guessed filter")
 		}
 		if b := page(t, h, "/transactions?category=none"); strings.Contains(b, "Coffee Shop") || !strings.Contains(b, "Payroll") {
-			t.Error("uncategorized filter")
+			t.Error("Uncategorized filter")
 		}
-		var id int32
-		if err := owner.QueryRow(ctx, `SELECT id FROM rules WHERE pattern = 'coffee'`).Scan(&id); err != nil {
+	})
+
+	t.Run("correcting a guess", func(t *testing.T) {
+		// Two equally recent, conflicting choices: no confident guess.
+		post("/transactions/edit", url.Values{"account": {"chk"}, "id": {"c05"}, "category": {catID("Groceries")}})
+		if c, src, _ := state("c02"); c != "" || src != "" {
+			t.Errorf("c02 = %q %q, want no guess", c, src)
+		}
+		var prev, prevSource string
+		if err := owner.QueryRow(ctx, `SELECT coalesce(p.name, ''), coalesce(h.previous_source, '')
+			FROM categorizations h LEFT JOIN categories p ON p.id = h.previous_category_id
+			WHERE h.transaction_id = 'c05' ORDER BY h.id DESC LIMIT 1`).Scan(&prev, &prevSource); err != nil {
 			t.Fatal(err)
 		}
-		if res := post("/rules/delete", url.Values{"id": {fmt.Sprint(id)}}); res.StatusCode != http.StatusSeeOther {
-			t.Fatalf("delete rule: %d", res.StatusCode)
+		if prev != "Dining" || prevSource != "learned" {
+			t.Errorf("history: was %q %q, want the Dining guess", prev, prevSource)
 		}
-		if c, src, _ := state("c02"); c != "" || src != "" {
-			t.Errorf("deleted rule's category stayed: %q %q", c, src)
+		// Back to automatic: c05 and the rest follow the remaining choice.
+		res := post("/transactions/edit", url.Values{"account": {"chk"}, "id": {"c05"}, "category": {""}})
+		if b := body(t, res); !strings.Contains(b, "Updated the guess for 59 similar transactions") {
+			t.Errorf("automatic: %s", b)
 		}
-		if c, src, _ := state("c01"); c != "Dining" || src != "manual" {
-			t.Errorf("hand-set category changed: %q %q", c, src)
+		if c, src, _ := state("c05"); c != "Dining" || src != "learned" {
+			t.Errorf("c05 = %q %q", c, src)
 		}
 	})
 
@@ -480,8 +472,6 @@ func TestEditing(t *testing.T) {
 			"no such category": {url.Values{"account": {"chk"}, "id": {"c03"}, "category": {"999999"}}, 400},
 			"bad category":     {url.Values{"account": {"chk"}, "id": {"c03"}, "category": {"abc"}}, 400},
 			"long note":        {url.Values{"account": {"chk"}, "id": {"c03"}, "note": {strings.Repeat("x", 501)}}, 400},
-			"empty rule":       {url.Values{"account": {"chk"}, "id": {"c03"}, "category": {catID("Dining")}, "rule": {"on"}, "rule_field": {"payee"}}, 400},
-			"bad rule field":   {url.Values{"account": {"chk"}, "id": {"c03"}, "category": {catID("Dining")}, "rule": {"on"}, "rule_field": {"amount"}, "rule_pattern": {"x"}}, 400},
 			"no such txn":      {url.Values{"account": {"chk"}, "id": {"nope"}}, 404},
 			"hidden account":   {url.Values{"account": {"old"}, "id": {"secret"}}, 404},
 		} {
@@ -496,7 +486,7 @@ func TestEditing(t *testing.T) {
 		if res := post("/transactions/edit", form, "Sec-Fetch-Site", "cross-site"); res.StatusCode != http.StatusForbidden {
 			t.Errorf("Sec-Fetch-Site cross-site: %d", res.StatusCode)
 		}
-		if res := post("/rules/delete", url.Values{"id": {"1"}}, "Sec-Fetch-Site", "", "Origin", "https://evil.example"); res.StatusCode != http.StatusForbidden {
+		if res := post("/transactions/edit", form, "Sec-Fetch-Site", "", "Origin", "https://evil.example"); res.StatusCode != http.StatusForbidden {
 			t.Errorf("foreign Origin: %d", res.StatusCode)
 		}
 		if c, _, _ := state("c04"); c == "Travel" {

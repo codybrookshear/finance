@@ -55,7 +55,7 @@ func New(cfg Config) (*Server, error) {
 	}
 	s := &Server{cfg: cfg, static: http.FileServerFS(staticFS), version: version}
 	s.pages = map[string]*template.Template{}
-	for _, page := range []string{"transactions", "spending", "networth", "rules"} {
+	for _, page := range []string{"transactions", "spending", "networth"} {
 		t, err := template.New("layout.html").Funcs(s.funcs()).
 			ParseFS(files, "templates/layout.html", "templates/"+page+".html")
 		if err != nil {
@@ -69,8 +69,8 @@ func New(cfg Config) (*Server, error) {
 // Handler returns the app with all middleware applied.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	// GET patterns also match HEAD; other methods get 405. The few POST
-	// routes are edits; CrossOriginProtection (below) refuses them from any
+	// GET patterns also match HEAD; other methods get 405. The one POST
+	// route is an edit; CrossOriginProtection (below) refuses it from any
 	// other site.
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/transactions", http.StatusSeeOther)
@@ -80,9 +80,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /networth", s.networth)
 	mux.HandleFunc("GET /transactions/edit", s.editForm)
 	mux.HandleFunc("POST /transactions/edit", s.saveTxn)
-	mux.HandleFunc("GET /rules", s.rules)
-	mux.HandleFunc("POST /rules", s.addRule)
-	mux.HandleFunc("POST /rules/delete", s.deleteRule)
 	mux.HandleFunc("GET /static/", s.serveStatic)
 	csrf := http.NewCrossOriginProtection() // Sec-Fetch-Site / Origin checks on non-GET requests
 	return s.securityHeaders(s.logRequests(s.recoverPanics(s.authenticate(csrf.Handler(mux)))))
@@ -206,11 +203,8 @@ func (s *Server) funcs() template.FuncMap {
 	return template.FuncMap{
 		"money":  formatMoney,
 		"commas": commas,
-		"fieldName": func(f string) string {
-			return map[string]string{"payee": "payee", "description": "description", "memo": "bank text"}[f]
-		},
-		"neg":   isNegative,
-		"asset": func(name string) string { return "/static/" + name + "?v=" + s.version },
+		"neg":    isNegative,
+		"asset":  func(name string) string { return "/static/" + name + "?v=" + s.version },
 		"day": func(t time.Time) string {
 			t = t.In(s.cfg.Location)
 			if t.Year() == time.Now().In(s.cfg.Location).Year() {

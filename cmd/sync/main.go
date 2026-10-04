@@ -91,7 +91,7 @@ func run(ctx context.Context, log *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("categorize: %w", err)
 	}
-	log.Info("categorized", "by_rule", c.Ruled, "rule_cleared", c.Cleared, "transfers", c.Transfers)
+	log.Info("categorized", "guessed", c.Learned, "transfers", c.Transfers)
 	return nil
 }
 
