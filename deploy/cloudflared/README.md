@@ -3,7 +3,7 @@
 When this is done, SSH to the droplet goes:
 
 ```
-Mac: ssh finance
+Workstation: ssh finance
   → cloudflared access ssh       (browser login to Cloudflare Access, token cached)
   → Cloudflare edge              (Access policy: only you)
   → tunnel                       (outbound-only connection from the droplet)
@@ -27,7 +27,12 @@ rules and ufw denies all inbound.
 - A **personal** Cloudflare account (not a work one) with your domain on it, and
   Zero Trust enabled (the free plan is fine). Your team name is the `<team>` in
   `<team>.cloudflareaccess.com`.
-- On your Mac: `brew install cloudflared`, and the 1Password CLI, signed in.
+- On your workstation: `cloudflared` (macOS: `brew install cloudflared`; Ubuntu:
+  Cloudflare's apt repo, pkg.cloudflare.com) and the 1Password CLI, signed in.
+- A dedicated, passphrase-protected SSH key for the droplet:
+  `ssh-keygen -t ed25519 -a 100 -f ~/.ssh/finance_ed25519 -C finance-droplet`.
+  Until port 22 is closed, point SSH at it for the droplet's IP in `~/.ssh/config`:
+  `Host <droplet-ip>`, `IdentityFile ~/.ssh/finance_ed25519`, `IdentitiesOnly yes`.
 - The droplet bootstrapped with `scripts/bootstrap-droplet.sh`, with port 22 still
   allowed from your IP.
 
@@ -38,10 +43,12 @@ rules and ufw denies all inbound.
 2. Access → Applications → Add → Self-hosted:
    - hostname `ssh.<your-domain>`, session duration 24h
    - policy: Allow, Include → Emails → your address
-3. From the app's overview, copy the **Application Audience (AUD) tag**. Put it,
-   and your team name, into `config.yml`.
+3. Copy the app's **Application Audience (AUD) tag** (app → Configure →
+   Additional settings). Put it, and your team name, into `config.yml`.
+   Can't find it? After step 2, Access's login redirect carries it:
+   `curl -sI https://ssh.<your-domain> | grep -i '^location'` → the `kid=` value.
 
-## 2. Create the tunnel (Mac, one time)
+## 2. Create the tunnel (workstation, one time)
 
 ```sh
 scripts/tunnel-create.sh ssh.<your-domain>
@@ -64,14 +71,19 @@ It asks for your sudo password once, then waits until the tunnel is connected.
 
 ## 4. SSH through the tunnel
 
-Add to `~/.ssh/config` on your Mac:
+Add to `~/.ssh/config` on your workstation:
 
 ```
 Host finance
   HostName ssh.<your-domain>
   User cody
-  ProxyCommand /opt/homebrew/bin/cloudflared access ssh --hostname %h
+  IdentityFile ~/.ssh/finance_ed25519
+  IdentitiesOnly yes
+  ProxyCommand /usr/bin/cloudflared access ssh --hostname %h
 ```
+
+Use the full path from `command -v cloudflared` (Homebrew on macOS:
+`/opt/homebrew/bin/cloudflared`).
 
 The first `ssh finance` opens a browser for the Access login. You also get a
 host-key prompt, because this is a new name for the same machine. Check that the
@@ -85,7 +97,20 @@ Only after `ssh finance` works:
    inbound rules are left. Leave outbound open: cloudflared needs TCP+UDP 7844
    and TCP 443 to Cloudflare.
 2. `ssh -t finance sudo ufw delete allow 22/tcp`
-3. Check: `nc -vz -G 5 <droplet-ip> 22` times out, and `ssh finance` still works.
+3. Make sshd listen on loopback only, so it stays unreachable from outside even
+   if both firewalls are ever opened by mistake. cloudflared connects to
+   127.0.0.1:22. On Ubuntu 24.04 sshd is socket-activated, and the
+   `sshd-socket-generator` turns `ListenAddress` into the socket's address.
+   From an `ssh finance` session, keeping it open until the check passes:
+   ```sh
+   echo 'ListenAddress 127.0.0.1' | sudo tee /etc/ssh/sshd_config.d/10-listen-localhost.conf
+   sudo sshd -t && sudo systemctl daemon-reload && sudo systemctl restart ssh.socket
+   ss -tln | grep ':22 '    # only 127.0.0.1:22
+   ```
+   The DigitalOcean *Droplet* Console uses SSH and stops working after this;
+   the *Recovery* Console does not.
+4. Check: `nc -vz -w 5 <droplet-ip> 22` (macOS: `-G 5`) times out, and a new
+   `ssh finance` still works.
 
 If you're ever locked out, use the DigitalOcean Recovery Console and log in with
 the admin user's password.

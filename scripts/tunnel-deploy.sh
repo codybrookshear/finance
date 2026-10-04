@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# tunnel-deploy.sh: install or update the Cloudflare Tunnel on the droplet. Run on your Mac.
+# tunnel-deploy.sh: install or update the Cloudflare Tunnel on the droplet. Run on your workstation.
 #
 #   scripts/tunnel-deploy.sh cody@<droplet-ip>   # first install, over the temporary port 22
 #   scripts/tunnel-deploy.sh finance             # later updates, through the tunnel (~/.ssh/config alias)
 #
 # Copies deploy/cloudflared/* and scripts/tunnel-install.sh to a private temp
 # dir on the droplet, sends the tunnel credentials from 1Password into it
-# (never written to disk on this Mac), and runs the installer with sudo.
+# (never written to disk on this machine), and runs the installer with sudo.
 # Updates are confirmed with a fresh SSH login, or rolled back on the droplet.
 
 # $dir (a validated remote temp path) is meant to expand locally, before ssh sends it.

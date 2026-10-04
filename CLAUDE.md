@@ -32,10 +32,12 @@ Single user (me). Security is the top priority; prefer fewer dependencies.
 ## Status
 - Done: schema + grants, SimpleFIN client, sync job (incremental + backfill + pending
   reconciliation + daily balance snapshots), compose, CI, droplet bootstrap script,
-  tunnel config + scripts (tested in an Ubuntu 24.04 systemd container, not yet live).
-- Droplet created; bootstrap not yet run. Port-22 rule should be my IP only (temporary).
-- Next: bootstrap → Access app + `scripts/tunnel-create.sh` → `scripts/tunnel-deploy.sh` →
-  remove port 22 → deploy sync early (balance history starts accruing) → web UI (search,
+  tunnel config + scripts.
+- Droplet `app-01` bootstrapped; Cloudflare Tunnel + Access SSH live (`ssh finance`);
+  port 22 closed at the DO firewall (2026-10-03).
+- Admin workstation is an Ubuntu desktop (not a Mac); droplet SSH key `~/.ssh/finance_ed25519`.
+  Domain: `brookshear.party` (Cloudflare Registrar, paid to 2028-10-03); SSH hostname `ssh.brookshear.party`.
+- Next: deploy sync early (balance history starts accruing) → web UI (search,
   monthly spending, net worth) → MCP server.
 
 ## Commands

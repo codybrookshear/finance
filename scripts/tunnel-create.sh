@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tunnel-create.sh: one-time, on your Mac. Creates the tunnel, points the SSH
+# tunnel-create.sh: one-time, on your workstation. Creates the tunnel, points the SSH
 # hostname at it, saves its credentials to 1Password, and fills in the tunnel
 # ID and hostname in deploy/cloudflared/config.yml.
 #
@@ -23,9 +23,10 @@ die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 cd "$(dirname "$0")/.."
 config=deploy/cloudflared/config.yml
 [[ "$HOST" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$ ]] || die "not a hostname: $HOST"
-command -v cloudflared >/dev/null || die "cloudflared not found (brew install cloudflared)"
+command -v cloudflared >/dev/null || die "cloudflared not found (see deploy/cloudflared/README.md)"
 command -v op >/dev/null || die "1Password CLI (op) not found"
 op whoami >/dev/null 2>&1 || die "sign in to the 1Password CLI first"
+op vault get "$OP_VAULT" >/dev/null 2>&1 || die "1Password vault '$OP_VAULT' not found (or not accessible)"
 if op document get "$OP_ITEM" --vault "$OP_VAULT" >/dev/null 2>&1; then
   die "1Password already has '$OP_ITEM' in '$OP_VAULT'; the tunnel was already created"
 fi

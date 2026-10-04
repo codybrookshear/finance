@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tunnel-install.sh: install or update the Cloudflare Tunnel service on the droplet.
 #
-# Run from your Mac via scripts/tunnel-deploy.sh, which copies these into a
+# Run from your workstation via scripts/tunnel-deploy.sh, which copies these into a
 # private temp dir on the droplet and runs this script with sudo:
 #   config.yml, cloudflared.service, tunnel.json (credentials; deleted here)
 #

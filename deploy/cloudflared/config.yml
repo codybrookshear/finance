@@ -9,7 +9,7 @@
 # app (deploy/cloudflared/README.md); the deploy script refuses to run until
 # they're filled in.
 
-tunnel: REPLACE_ME_TUNNEL_UUID
+tunnel: a1a032df-e5b2-425f-915b-07d6b345c6c5
 
 # Health/metrics listener, loopback only (the install script checks /ready).
 metrics: 127.0.0.1:20241
@@ -21,13 +21,14 @@ ingress:
   # cloudflared ALSO verify the Access JWT (signature, expiry, audience) before
   # it opens a connection to sshd, so a deleted/misconfigured Access app, or a
   # second hostname routed to this tunnel, can't expose sshd.
-  - hostname: REPLACE_ME_SSH_HOSTNAME          # e.g. ssh.example.com
+  - hostname: ssh.brookshear.party
     service: ssh://127.0.0.1:22
     originRequest:
       access:
         required: true
-        teamName: REPLACE_ME_TEAM_NAME         # <team>.cloudflareaccess.com
-        audTag: [REPLACE_ME_SSH_AUD_TAG]       # Access app → Application Audience (AUD) tag
+        teamName: brookshear       # <team>.cloudflareaccess.com
+        # Access app → Application Audience (AUD) tag
+        audTag: [52b07270a638969df4be4ed96cd4cfeb3b36c5963d45b8059a97d7c8c0cc4a05]
 
   # Anything else, including hostnames not listed above.
   - service: http_status:404
