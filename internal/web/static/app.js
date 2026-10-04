@@ -1,6 +1,9 @@
-// Draws the net worth chart. The data comes from data-* attributes (never
-// inline script), as comma-separated days (YYYY-MM-DD) and decimal strings.
-// Converting to Number here is for plotting only; the server never uses floats.
+// The app's only script (htmx aside): draws the net worth chart and keeps the
+// transaction date filter a valid range.
+//
+// Chart data comes from data-* attributes (never inline script), as
+// comma-separated days (YYYY-MM-DD) and decimal strings. Converting to Number
+// here is for plotting only; the server never uses floats.
 "use strict";
 
 (function () {
@@ -38,4 +41,21 @@
   }
 
   document.addEventListener("DOMContentLoaded", drawNetWorth);
+
+  // Keep the date filter a valid range: moving one end past the other moves
+  // the other end too. Runs in the capture phase, so the values are fixed
+  // before htmx (listening on the form) sends the search.
+  document.addEventListener("change", (e) => {
+    const el = e.target;
+    if (!(el instanceof HTMLInputElement) || el.type !== "date" || !el.form) return;
+    const from = el.form.elements.namedItem("from");
+    const to = el.form.elements.namedItem("to");
+    if (!from || !to) return;
+    if (from.value && to.value && to.value < from.value) {
+      if (el === from) to.value = from.value;
+      else from.value = to.value;
+    }
+    to.min = from.value;
+    from.max = to.value;
+  }, true);
 })();

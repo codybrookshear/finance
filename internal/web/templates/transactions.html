@@ -26,8 +26,8 @@
     </select>
   </div>
   <div class="row dates">
-    <label><span>From</span><input type="date" name="from" value="{{.From}}"></label>
-    <label><span>To</span><input type="date" name="to" value="{{.To}}"></label>
+    <label><span>From</span><input type="date" name="from" value="{{.From}}" max="{{.To}}"></label>
+    <label><span>To</span><input type="date" name="to" value="{{.To}}" min="{{.From}}"></label>
   </div>
   <noscript><button type="submit">Search</button></noscript>
 </form>

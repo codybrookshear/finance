@@ -55,12 +55,18 @@ func (s *Server) transactions(w http.ResponseWriter, r *http.Request) {
 		p.Category = c
 	}
 	f := TxnFilter{Query: p.Q, AccountID: p.Account, Category: p.Category, Limit: 50}
-	if t, ok := s.parseDay(q.Get("from")); ok {
-		p.From, f.From = q.Get("from"), &t
+	from, to := q.Get("from"), q.Get("to")
+	fromDay, fromOK := s.parseDay(from)
+	toDay, toOK := s.parseDay(to)
+	if fromOK && toOK && toDay.Before(fromDay) { // a reversed range: take it the right way round
+		from, to, fromDay, toDay = to, from, toDay, fromDay
 	}
-	if t, ok := s.parseDay(q.Get("to")); ok {
-		end := t.AddDate(0, 0, 1) // "to" is inclusive
-		p.To, f.To = q.Get("to"), &end
+	if fromOK {
+		p.From, f.From = from, &fromDay
+	}
+	if toOK {
+		end := toDay.AddDate(0, 0, 1) // "to" is inclusive
+		p.To, f.To = to, &end
 	}
 	if a := q.Get("after"); a != "" {
 		c, err := parseCursor(a)

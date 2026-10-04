@@ -311,6 +311,12 @@ func TestPages(t *testing.T) {
 		if b := page("/transactions?from=not-a-date"); !strings.Contains(b, "65 transactions") {
 			t.Error("a bad date should be ignored")
 		}
+		// A reversed range is taken the right way round, not as empty.
+		first := time.Date(lm.Year(), lm.Month(), 1, 0, 0, 0, 0, la).Format(time.DateOnly)
+		b = page("/transactions?from=" + day + "&to=" + first + "&q=coffee")
+		if !strings.Contains(b, "10 transactions") || !strings.Contains(b, `name="from" value="`+first+`" max="`+day+`"`) {
+			t.Errorf("reversed range: %s", regexp.MustCompile(`(?s)<p class="summary">.*?</p>`).FindString(b))
+		}
 	})
 
 	t.Run("spending", func(t *testing.T) {
