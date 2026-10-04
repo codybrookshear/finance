@@ -92,7 +92,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 const csp = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; " +
-	"connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+	"connect-src 'self'; manifest-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 
 func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -195,11 +195,14 @@ func (s *Server) categoriesCSS(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, b.String())
 }
 
-// serveStatic serves only .js and .css files. URLs carry ?v=<content hash>,
-// so they can be cached privately (never by Cloudflare: "private").
+// serveStatic serves only scripts, styles, icons and the web app manifest.
+// URLs carry ?v=<content hash>, so they can be cached privately (never by
+// Cloudflare: "private").
 func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
 	switch path.Ext(r.URL.Path) {
-	case ".js", ".css":
+	case ".js", ".css", ".svg", ".png":
+	case ".webmanifest":
+		w.Header().Set("Content-Type", "application/manifest+json")
 	default:
 		http.NotFound(w, r)
 		return

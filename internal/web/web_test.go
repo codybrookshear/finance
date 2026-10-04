@@ -139,6 +139,15 @@ func TestHeadersMethodsAndStatic(t *testing.T) {
 	if !strings.Contains(csp, "script-src 'self'") || strings.Contains(csp, "unsafe") {
 		t.Errorf("CSP too loose: %s", csp)
 	}
+	for p, ct := range map[string]string{
+		"/static/icon.svg":             "image/svg+xml",
+		"/static/icon-180.png":         "image/png",
+		"/static/manifest.webmanifest": "application/manifest+json",
+	} {
+		if res := get(t, h, p); res.StatusCode != http.StatusOK || res.Header.Get("Content-Type") != ct {
+			t.Errorf("GET %s: %d %q", p, res.StatusCode, res.Header.Get("Content-Type"))
+		}
+	}
 	for _, p := range []string{"/static/vendor/README.md", "/static/vendor/uPlot.LICENSE", "/static/../web.go"} {
 		if res := get(t, h, p); res.StatusCode == http.StatusOK {
 			t.Errorf("GET %s: served", p)

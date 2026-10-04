@@ -10,7 +10,15 @@
 <!-- htmx: no eval, no inline styles, and no history snapshots in localStorage
      (they would keep financial data on the device). -->
 <meta name="htmx-config" content='{"allowEval":false,"allowScriptTags":false,"includeIndicatorStyles":false,"historyCacheSize":0,"refreshOnHistoryMiss":true,"selfRequestsOnly":true}'>
-<title>{{template "title" .}} · Finance</title>
+<title>{{template "title" .}} · Tally</title>
+<link rel="icon" href="{{asset "icon.svg"}}" type="image/svg+xml">
+<link rel="apple-touch-icon" href="{{asset "icon-180.png"}}">
+<!-- Fetched with the login cookie: without it, Cloudflare Access would
+     answer the manifest request with its login page. -->
+<link rel="manifest" href="{{asset "manifest.webmanifest"}}" crossorigin="use-credentials">
+<meta name="apple-mobile-web-app-title" content="Tally">
+<meta name="theme-color" content="#fafaf9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0c0a09" media="(prefers-color-scheme: dark)">
 <link rel="stylesheet" href="{{asset "app.css"}}">
 <link rel="stylesheet" href="/categories.css">
 {{- block "head" .}}{{end}}
