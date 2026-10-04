@@ -26,7 +26,7 @@ jobs:
       # Tip: pin actions to full commit SHAs; Dependabot keeps them updated.
       - uses: actions/checkout@v4
         with: { persist-credentials: false }
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with: { go-version-file: go.mod }
       - name: Create app roles (mirrors db/init/01-roles.sh)
         run: |
