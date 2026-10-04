@@ -46,7 +46,7 @@ scripts/        droplet bootstrap, tunnel create/deploy/install
 
 ## Getting started
 
-Prereqs: Go 1.24+, Docker, 1Password CLI (`op`), `gitleaks`.
+Prereqs: Go 1.27+ (an older Go fetches it automatically), Docker, 1Password CLI (`op`), `gitleaks`.
 
 ```sh
 make setup        # git hook; go mod tidy creates go.sum, verified against sum.golang.org
