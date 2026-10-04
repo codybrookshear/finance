@@ -452,6 +452,9 @@ func TestEditing(t *testing.T) {
 			!strings.Contains(b, "<details open>") || !strings.Contains(b, "<dt>Merchant</dt><dd>Coffee Shop</dd>") {
 			t.Errorf("note: %d\n%s", res.StatusCode, b)
 		}
+		if !strings.Contains(b, `value="Lunch with Sam" placeholder="Coffee Shop"`) {
+			t.Error("the name field should show the original name as its placeholder")
+		}
 		if b := page(t, h, "/transactions?q=sam"); !strings.Contains(b, "1 transaction ") || !strings.Contains(b, "Lunch with Sam") {
 			t.Error("search should find notes")
 		}

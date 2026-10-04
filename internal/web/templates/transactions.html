@@ -89,7 +89,7 @@
     <form class="note" hx-post="/transactions/note" hx-trigger="change, submit" hx-target="closest li" hx-swap="outerHTML">
       <input type="hidden" name="account" value="{{.AccountID}}">
       <input type="hidden" name="id" value="{{.ID}}">
-      <input name="note" value="{{.Note}}" placeholder="Add a note (it becomes the title)" maxlength="500" autocomplete="off" aria-label="Note, shown as the title">
+      <input name="note" value="{{.Note}}" placeholder="{{.Merchant}}" maxlength="500" autocomplete="off" enterkeyhint="done" aria-label="Name (clear it to use {{.Merchant}})">
     </form>
   </details>
 </li>
