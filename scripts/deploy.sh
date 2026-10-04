@@ -25,7 +25,8 @@ ENV_FILE=env/prod.env
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
 cd "$(dirname "$0")/.."
-[[ -z "$(git status --porcelain)" ]] || die "commit your changes first: images are built from HEAD"
+# Untracked files are fine: images come from `git archive HEAD`.
+[[ -z "$(git status --porcelain --untracked-files=no)" ]] || die "commit your changes first: images are built from HEAD"
 if grep -qE '^[^#]*REPLACE_ME' compose.prod.yaml; then
   die "fill in the REPLACE_ME values in compose.prod.yaml first (see deploy/finance/README.md)"
 fi
