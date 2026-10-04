@@ -190,13 +190,15 @@ func (db *DB) TxnSummary(ctx context.Context, f TxnFilter) (count int, totals []
 type Month struct {
 	YearMonth        string // YYYY-MM
 	Spent, Income    string
+	Net              string // Income - Spent
 	Categories       []Line // spending per category, largest first
 	IncomeCategories []Line
 }
 
 // Spending summarizes posted, non-transfer transactions per month since
 // `since`. Spending is shown positive: refunds in an expense category reduce
-// it. Uncategorized money in counts as income, money out as spending.
+// it. Uncategorized money in counts as income, money out as spending. Net is
+// income minus spending (the plain sum of the month's amounts).
 func (db *DB) Spending(ctx context.Context, tz string, since time.Time) ([]Month, error) {
 	rows, err := db.Pool.Query(ctx, `
 		WITH tx AS (
@@ -212,8 +214,8 @@ func (db *DB) Spending(ctx context.Context, tz string, since time.Time) ([]Month
 		SELECT month, kind, category,
 		       round(CASE WHEN kind = 'expense' THEN -sum(amount) ELSE sum(amount) END, 2)::text
 		FROM tx
-		GROUP BY GROUPING SETS ((month, kind, category), (month, kind))
-		ORDER BY month DESC, kind, category IS NOT NULL,
+		GROUP BY GROUPING SETS ((month, kind, category), (month, kind), (month))
+		ORDER BY month DESC, kind NULLS FIRST, category IS NOT NULL,
 		         CASE WHEN kind = 'expense' THEN -sum(amount) ELSE sum(amount) END DESC`, tz, since)
 	if err != nil {
 		return nil, fmt.Errorf("spending: %w", err)
@@ -221,21 +223,23 @@ func (db *DB) Spending(ctx context.Context, tz string, since time.Time) ([]Month
 	defer rows.Close()
 	var months []Month
 	for rows.Next() {
-		var month, kind, total string
-		var category *string
+		var month, total string
+		var kind, category *string
 		if err := rows.Scan(&month, &kind, &category, &total); err != nil {
 			return nil, fmt.Errorf("spending: %w", err)
 		}
 		if len(months) == 0 || months[len(months)-1].YearMonth != month {
-			months = append(months, Month{YearMonth: month, Spent: "0.00", Income: "0.00"})
+			months = append(months, Month{YearMonth: month, Spent: "0.00", Income: "0.00", Net: "0.00"})
 		}
 		m := &months[len(months)-1]
 		switch {
-		case category == nil && kind == "expense":
+		case kind == nil:
+			m.Net = total
+		case category == nil && *kind == "expense":
 			m.Spent = total
 		case category == nil:
 			m.Income = total
-		case kind == "expense":
+		case *kind == "expense":
 			m.Categories = append(m.Categories, Line{Label: *category, Amount: total})
 		default:
 			m.IncomeCategories = append(m.IncomeCategories, Line{Label: *category, Amount: total})

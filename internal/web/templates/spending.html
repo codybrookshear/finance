@@ -2,15 +2,16 @@
 
 {{define "content" -}}
 <h1>Spending</h1>
-<p class="note">Last 12 months of posted transactions, transfers left out. Until
+<p class="note">Net income (income minus spending) for each of the last 12 months,
+from posted transactions, transfers left out. Until
 transactions are categorized, all money out is "Uncategorized", including
 credit-card payments, so purchases on a card count twice.</p>
 {{range $i, $m := .Months -}}
 <details class="month"{{if eq $i 0}} open{{end}}>
   <summary>
     <span class="what">{{monthName .YearMonth}}</span>
-    <span class="amt">{{money .Spent ""}}</span>
-    <span class="meta">in {{money .Income ""}}</span>
+    <span class="amt{{if neg .Net}} out{{else}} in{{end}}" title="Net income">{{money .Net ""}}</span>
+    <span class="meta">income {{money .Income ""}} · spending {{money .Spent ""}}</span>
   </summary>
   <ul class="list cats">
     {{- range .Categories}}

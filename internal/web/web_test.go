@@ -315,7 +315,9 @@ func TestPages(t *testing.T) {
 	t.Run("spending", func(t *testing.T) {
 		b := page("/spending")
 		lm := time.Now().In(la).AddDate(0, -1, 0)
-		for _, want := range []string{lm.Format("January 2006"), "Groceries", "$12.34", "Uncategorized", "in $2,000.00"} {
+		// Last month: income 2,000.00; spending 10 coffees (45.00) + 12.34 + 1.00.
+		for _, want := range []string{lm.Format("January 2006"), "Groceries", "$12.34", "Uncategorized",
+			"income $2,000.00", "spending $58.34", "$1,941.66"} {
 			if !strings.Contains(b, want) {
 				t.Errorf("missing %q in:\n%s", want, regexp.MustCompile(`(?s)<main>.*</main>`).FindString(b))
 				break
