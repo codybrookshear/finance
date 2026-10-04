@@ -1,4 +1,4 @@
-# finance: personal finance app (the web UI is called Tally)
+# finance: personal finance app (the web UI is called BB)
 
 Personal app: SimpleFIN Bridge → Postgres → web UI (phone) + local MCP server for Claude.
 Single user (me). Security is the top priority; prefer fewer dependencies.

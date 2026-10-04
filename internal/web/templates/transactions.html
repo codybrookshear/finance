@@ -8,7 +8,7 @@
       hx-get="/transactions" hx-target="#results" hx-swap="outerHTML" hx-push-url="true"
       hx-trigger="submit, input delay:300ms from:#q, change">
   <input id="q" type="search" name="q" value="{{.Q}}" maxlength="200" autocomplete="off"
-         enterkeyhint="search" placeholder="Search payee, note, description or amount" aria-label="Search">
+         enterkeyhint="search" placeholder="Search name, note or amount" aria-label="Search">
   <div class="row">
     <select name="account" aria-label="Account">
       <option value="">All accounts</option>
