@@ -3,6 +3,7 @@
 {{define "scripts"}}<script src="{{asset "vendor/htmx.min.js"}}"></script>{{end}}
 
 {{define "content" -}}
+<h1>Transactions</h1>
 <form class="filters" action="/transactions" method="get" role="search"
       hx-get="/transactions" hx-target="#results" hx-swap="outerHTML" hx-push-url="true"
       hx-trigger="submit, input delay:300ms from:#q, change">
