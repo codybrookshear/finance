@@ -47,52 +47,48 @@
 {{- end}}
 
 {{define "rows" -}}
-{{range .Txns}}{{template "txn" .}}
+{{range .Rows -}}
+{{if .Day}}<li class="day">{{.Day}}</li>
+{{end}}{{template "txn" (withCats .Txn $.Categories)}}
 {{else -}}
 <li class="empty">No transactions match.</li>
 {{end -}}
 {{if .Next}}<li id="more" class="more" hx-get="{{.Next}}" hx-trigger="revealed" hx-swap="outerHTML">Loading…</li>{{end}}
 {{- end}}
 
+{{/* One transaction: a category chip (a native picker that saves as soon as
+     you choose), then the merchant and amount; tap those for the details. */}}
 {{define "txn" -}}
-<li{{if .Pending}} class="pending"{{end}}>
-  <details{{if .Open}} open{{end}}>
-    <summary>
-      <span class="what">{{if .Description}}{{.Description}}{{else}}{{.Payee}}{{end}}</span>
-      <span class="amt{{if neg .Amount}} out{{else}} in{{end}}">{{money .Amount .Currency}}</span>
-      <span class="meta">{{day .At}} · {{.Account}}
-        {{- if .Category}} · {{.Category}}{{if eq .Source "learned"}} (guess){{end}}{{else if .Transfer}} · transfer{{end}}
-        {{- if .Pending}} · pending{{end}}</span>
-    </summary>
-    <dl>
-      {{- if .Payee}}<dt>Payee</dt><dd>{{.Payee}}</dd>{{end}}
-      {{- if .Memo}}<dt>Bank text</dt><dd>{{.Memo}}</dd>{{end}}
-      <dt>Account</dt><dd>{{.Account}}</dd>
-      {{- if .Note}}<dt>Note</dt><dd>{{.Note}}</dd>{{end}}
-    </dl>
-    {{- if .Message}}<p class="saved" role="status">{{.Message}}</p>{{end}}
-    <div class="edit-slot" hx-get="{{.EditURL}}" hx-trigger="intersect once" hx-swap="outerHTML"></div>
-  </details>
-</li>
-{{- end}}
-
-{{define "edit" -}}
-<form class="edit" hx-post="/transactions/edit" hx-target="closest li" hx-swap="outerHTML">
-  <input type="hidden" name="account" value="{{.Txn.AccountID}}">
-  <input type="hidden" name="id" value="{{.Txn.ID}}">
-  <label>Category
-    <select name="category">
-      <option value="">Automatic{{if and .Txn.Category (not .Selected)}}: {{.Txn.Category}}{{end}}</option>
+<li id="{{.DOMID}}" class="txn{{if .Pending}} pending{{end}}"{{if .OOB}} hx-swap-oob="true"{{end}}>
+  <form class="chip{{if .CategoryID}} c-{{.CategoryID}}{{end}}{{if .Guessed}} guess{{end}}{{if not .Category}} none{{end}}"
+        hx-post="/transactions/category" hx-trigger="change" hx-target="closest li" hx-swap="outerHTML">
+    <span aria-hidden="true">{{if .Category}}{{.CategoryEmoji}}{{else}}?{{end}}</span>
+    <input type="hidden" name="account" value="{{.AccountID}}">
+    <input type="hidden" name="id" value="{{.ID}}">
+    <select name="category" aria-label="Category: {{if .Category}}{{.Category}}{{if .Guessed}} (guess){{end}}{{else}}none{{end}}">
+      <option value="">{{if .Guessed}}✨ Guess: {{.CategoryEmoji}} {{.Category}}{{else if .Chosen}}✨ Let the app guess{{else}}Uncategorized{{end}}</option>
       {{- range .Categories}}
-      <option value="{{.ID}}"{{if eq .ID $.Selected}} selected{{end}}>{{.Name}}</option>
+      <option value="{{.ID}}"{{if eq .ID $.Chosen}} selected{{end}}>{{.Emoji}} {{.Name}}</option>
       {{- end}}
     </select>
-  </label>
-  {{- if eq .Txn.Source "learned"}}<p class="hint">Guessed from transactions you categorized like it.</p>
-  {{- else if eq .Txn.Source "auto"}}<p class="hint">Detected as a transfer between your accounts.</p>
-  {{- else if .Selected}}<p class="hint">Set by you. Similar transactions follow your choice; choose Automatic to let the app guess.</p>
-  {{- else}}<p class="hint">Pick a category and similar transactions will follow.</p>{{end}}
-  <label>Note <input name="note" value="{{.Txn.Note}}" maxlength="500" autocomplete="off"></label>
-  <div class="actions"><button type="submit">Save</button></div>
-</form>
+  </form>
+  <details>
+    <summary>
+      <span class="what">{{.Merchant}}</span>
+      <span class="amt{{if neg .Amount}} out{{else}} in{{end}}">{{money .Amount .Currency}}</span>
+    </summary>
+    <dl>
+      <dt>Account</dt><dd>{{.Account}}</dd>
+      {{- if .Category}}<dt>Category</dt><dd>{{.CategoryEmoji}} {{.Category}}{{if eq .Source "learned"}} (guessed from similar transactions you categorized){{else if eq .Source "auto"}} (detected: money moved between your accounts){{end}}</dd>{{end}}
+      {{- if and .Payee .Description}}<dt>Bank text</dt><dd>{{.Description}}</dd>{{end}}
+      {{- if .Memo}}<dt>Memo</dt><dd>{{.Memo}}</dd>{{end}}
+      {{- if .Pending}}<dt>Status</dt><dd>Pending</dd>{{end}}
+    </dl>
+    <form class="note" hx-post="/transactions/note" hx-trigger="change, submit" hx-swap="none">
+      <input type="hidden" name="account" value="{{.AccountID}}">
+      <input type="hidden" name="id" value="{{.ID}}">
+      <input name="note" value="{{.Note}}" placeholder="Add a note" maxlength="500" autocomplete="off" aria-label="Note">
+    </form>
+  </details>
+</li>
 {{- end}}

@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -29,27 +28,48 @@ type Txn struct {
 	Amount, Description, Payee, Memo string
 	Category                         string // name, "" if none
 	CategoryID                       *int32
+	CategoryEmoji                    string
 	Source                           string // rule, auto, manual, claude, or "" (none)
 	Note                             string
 	Pending, Transfer                bool
-	Open                             bool   // view only: render with details expanded
-	Message                          string // view only: shown after saving
+	OOB                              bool // view only: render as an htmx out-of-band swap
 }
 
-// EditURL loads this transaction's edit form.
-func (t Txn) EditURL() string {
-	return "/transactions/edit?" + url.Values{"account": {t.AccountID}, "id": {t.ID}}.Encode()
+// DOMID identifies the transaction's row in the page.
+func (t Txn) DOMID() string {
+	return "t-" + base64.RawURLEncoding.EncodeToString([]byte(t.AccountID+"\x00"+t.ID))
+}
+
+// Guessed reports whether the category was filled in automatically.
+func (t Txn) Guessed() bool { return t.Source == "learned" || t.Source == "auto" }
+
+// Chosen is the category you set by hand (0 if none).
+func (t Txn) Chosen() int32 {
+	if t.CategoryID != nil && (t.Source == "manual" || t.Source == "claude") {
+		return *t.CategoryID
+	}
+	return 0
+}
+
+// Merchant is the name shown in the list: the bank's payee if it gave one.
+func (t Txn) Merchant() string {
+	if p := strings.TrimSpace(t.Payee); p != "" {
+		return p
+	}
+	return t.Description
 }
 
 // Category is one of the categories a transaction can have.
 type Category struct {
-	ID   int32
-	Name string
-	Kind string // expense, income or transfer
+	ID    int32
+	Name  string
+	Kind  string // expense, income or transfer
+	Emoji string
+	Hue   *int32 // chip color; nil = neutral
 }
 
 func (db *DB) Categories(ctx context.Context) ([]Category, error) {
-	rows, err := db.Pool.Query(ctx, `SELECT id, name, kind FROM categories
+	rows, err := db.Pool.Query(ctx, `SELECT id, name, kind, emoji, hue FROM categories
 		ORDER BY kind = 'transfer', kind = 'income', name`)
 	if err != nil {
 		return nil, err
@@ -98,7 +118,11 @@ func parseCursor(s string) (*Cursor, error) {
 type Total struct{ Currency, Amount string }
 
 // Line is a labelled amount, e.g. one category's spending in a month.
-type Line struct{ Label, Amount string }
+type Line struct {
+	Label, Amount string
+	CategoryID    *int32 // nil for "Uncategorized"
+	Emoji         string
+}
 
 type DB struct{ Pool *pgxpool.Pool }
 
@@ -140,7 +164,7 @@ const (
 		       OR t.category_id::text = $7)`
 	txnCols = `t.account_id, t.id, coalesce(a.display_name, a.name), a.currency, ` + txnSortAt + `,
 		round(t.amount, 2)::text, t.description, t.payee, t.memo,
-		coalesce(c.name, ''), t.category_id, coalesce(t.category_source, ''), coalesce(t.note, ''),
+		coalesce(c.name, ''), t.category_id, coalesce(c.emoji, ''), coalesce(t.category_source, ''), coalesce(t.note, ''),
 		t.pending, t.is_transfer`
 )
 
@@ -196,7 +220,7 @@ func (db *DB) Transactions(ctx context.Context, f TxnFilter) ([]Txn, *Cursor, er
 func scanTxn(r pgx.CollectableRow) (Txn, error) {
 	var t Txn
 	err := r.Scan(&t.AccountID, &t.ID, &t.Account, &t.Currency, &t.At, &t.Amount,
-		&t.Description, &t.Payee, &t.Memo, &t.Category, &t.CategoryID, &t.Source, &t.Note,
+		&t.Description, &t.Payee, &t.Memo, &t.Category, &t.CategoryID, &t.CategoryEmoji, &t.Source, &t.Note,
 		&t.Pending, &t.Transfer)
 	return t, err
 }
@@ -217,6 +241,25 @@ func (db *DB) Txn(ctx context.Context, accountID, id string) (Txn, error) {
 }
 
 var ErrNotFound = errors.New("not found")
+
+// TxnsByKey returns the given transactions (those in hidden accounts are
+// left out), newest first.
+func (db *DB) TxnsByKey(ctx context.Context, keys []TxnKey) ([]Txn, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	accounts, ids := make([]string, len(keys)), make([]string, len(keys))
+	for i, k := range keys {
+		accounts[i], ids[i] = k.AccountID, k.ID
+	}
+	rows, err := db.Pool.Query(ctx, `SELECT `+txnCols+txnFrom+`
+		WHERE NOT a.hidden AND (t.account_id, t.id) IN (SELECT * FROM unnest($1::text[], $2::text[]))
+		ORDER BY 5 DESC`, accounts, ids)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, scanTxn)
+}
 
 // TxnSummary counts and totals everything the filter matches (all pages).
 func (db *DB) TxnSummary(ctx context.Context, f TxnFilter) (count int, totals []Total, err error) {
@@ -259,15 +302,16 @@ func (db *DB) Spending(ctx context.Context, tz string, since time.Time) ([]Month
 			       CASE WHEN c.kind = 'income' OR (c.kind IS NULL AND t.amount > 0)
 			            THEN 'income' ELSE 'expense' END AS kind,
 			       coalesce(c.name, 'Uncategorized') AS category,
+			       c.id AS category_id, coalesce(c.emoji, '') AS emoji,
 			       t.amount`+txnFrom+`
 			WHERE NOT a.hidden AND NOT t.pending AND NOT t.is_transfer
 			  AND coalesce(c.kind, '') <> 'transfer'
 			  AND `+txnSortAt+` >= $2
 		)
-		SELECT month, kind, category,
+		SELECT month, kind, category, category_id, emoji,
 		       round(CASE WHEN kind = 'expense' THEN -sum(amount) ELSE sum(amount) END, 2)::text
 		FROM tx
-		GROUP BY GROUPING SETS ((month, kind, category), (month, kind), (month))
+		GROUP BY GROUPING SETS ((month, kind, category, category_id, emoji), (month, kind), (month))
 		ORDER BY month DESC, kind NULLS FIRST, category IS NOT NULL,
 		         CASE WHEN kind = 'expense' THEN -sum(amount) ELSE sum(amount) END DESC`, tz, since)
 	if err != nil {
@@ -277,8 +321,9 @@ func (db *DB) Spending(ctx context.Context, tz string, since time.Time) ([]Month
 	var months []Month
 	for rows.Next() {
 		var month, total string
-		var kind, category *string
-		if err := rows.Scan(&month, &kind, &category, &total); err != nil {
+		var kind, category, emoji *string
+		var categoryID *int32
+		if err := rows.Scan(&month, &kind, &category, &categoryID, &emoji, &total); err != nil {
 			return nil, fmt.Errorf("spending: %w", err)
 		}
 		if len(months) == 0 || months[len(months)-1].YearMonth != month {
@@ -293,9 +338,9 @@ func (db *DB) Spending(ctx context.Context, tz string, since time.Time) ([]Month
 		case category == nil:
 			m.Income = total
 		case *kind == "expense":
-			m.Categories = append(m.Categories, Line{Label: *category, Amount: total})
+			m.Categories = append(m.Categories, Line{Label: *category, Amount: total, CategoryID: categoryID, Emoji: deref(emoji)})
 		default:
-			m.IncomeCategories = append(m.IncomeCategories, Line{Label: *category, Amount: total})
+			m.IncomeCategories = append(m.IncomeCategories, Line{Label: *category, Amount: total, CategoryID: categoryID, Emoji: deref(emoji)})
 		}
 	}
 	return months, rows.Err()
@@ -351,4 +396,11 @@ func (db *DB) LastSync(ctx context.Context) (*time.Time, error) {
 	var at *time.Time
 	err := db.Pool.QueryRow(ctx, `SELECT max(finished_at) FROM sync_runs WHERE status = 'ok'`).Scan(&at)
 	return at, err
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }

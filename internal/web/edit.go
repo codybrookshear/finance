@@ -1,10 +1,10 @@
 package web
 
-// Edits: setting a transaction's category and note. Every write runs in a
-// transaction as finance_edit (SET LOCAL ROLE; finance_web itself can't write
-// and the role reverts when the transaction ends). The database records each
-// category you set in categorizations, and categorize() then re-guesses the
-// transactions similar to the one you changed.
+// Edits: a transaction's category (picked from its chip) and note, each saved
+// as soon as it changes. Every write runs in a transaction as finance_edit
+// (SET LOCAL ROLE; finance_web itself can't write and the role reverts when
+// the transaction ends). The database records each category you set in
+// categorizations, and categorize() then re-guesses similar transactions.
 
 import (
 	"context"
@@ -27,32 +27,61 @@ func (db *DB) edit(ctx context.Context, fn func(pgx.Tx) error) error {
 	})
 }
 
-// SaveTxn sets a transaction's category (nil = automatic: the app guesses)
-// and note. It returns how many similar transactions got a new guess.
-func (db *DB) SaveTxn(ctx context.Context, accountID, id string, categoryID *int32, note string) (guessed int, err error) {
+// TxnKey identifies a transaction.
+type TxnKey struct{ AccountID, ID string }
+
+// SetCategory sets a transaction's category by hand (nil = back to automatic:
+// the app guesses) and re-guesses similar transactions. It returns the most
+// recent other transactions whose category changed as a result (at most 100:
+// enough to refresh what's on screen).
+func (db *DB) SetCategory(ctx context.Context, accountID, id string, categoryID *int32) (changed []TxnKey, err error) {
 	err = db.edit(ctx, func(tx pgx.Tx) error {
 		var merchant string
 		err := tx.QueryRow(ctx, `
 			UPDATE transactions SET
 				category_id = $3,
 				is_transfer = coalesce((SELECT kind = 'transfer' FROM categories WHERE id = $3), false),
-				category_source = CASE WHEN $3::integer IS NULL THEN NULL ELSE 'manual' END,
-				note = nullif($4, '')
+				category_source = CASE WHEN $3::integer IS NULL THEN NULL ELSE 'manual' END
 			WHERE account_id = $1 AND id = $2
 			  AND account_id IN (SELECT id FROM accounts WHERE NOT hidden)
 			RETURNING merchant`,
-			accountID, id, categoryID, note).Scan(&merchant)
+			accountID, id, categoryID).Scan(&merchant)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
-		} else if err != nil {
+		} else if err != nil || merchant == "" {
 			return err
 		}
-		if merchant == "" {
-			return nil
+		if _, err := tx.Exec(ctx, `SELECT categorize($1)`, merchant); err != nil {
+			return err
 		}
-		return tx.QueryRow(ctx, `SELECT learned FROM categorize($1)`, merchant).Scan(&guessed)
+		// Rows this transaction wrote carry its transaction ID as xmin.
+		rows, err := tx.Query(ctx, `
+			SELECT account_id, id FROM transactions
+			WHERE xmin = pg_current_xact_id()::xid AND NOT (account_id = $1 AND id = $2)
+			ORDER BY coalesce(transacted_at, posted_at, first_seen_at) DESC
+			LIMIT 100`, accountID, id)
+		if err != nil {
+			return err
+		}
+		changed, err = pgx.CollectRows(rows, pgx.RowToStructByPos[TxnKey])
+		return err
 	})
-	return guessed, err
+	return changed, err
+}
+
+// SetNote sets a transaction's note ("" removes it).
+func (db *DB) SetNote(ctx context.Context, accountID, id, note string) error {
+	return db.edit(ctx, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `
+			UPDATE transactions SET note = nullif($3, '')
+			WHERE account_id = $1 AND id = $2
+			  AND account_id IN (SELECT id FROM accounts WHERE NOT hidden)`,
+			accountID, id, note)
+		if err == nil && tag.RowsAffected() != 1 {
+			err = ErrNotFound
+		}
+		return err
+	})
 }
 
 // ---- handlers ----
@@ -90,35 +119,9 @@ func parseID(v string) (*int32, bool) {
 	return &id, true
 }
 
-type editForm struct {
-	Txn        Txn
-	Categories []Category
-	Selected   int32 // the hand-set category, 0 when automatic
-}
-
-func (s *Server) editForm(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	t, err := s.cfg.DB.Txn(r.Context(), q.Get("account"), q.Get("id"))
-	if errors.Is(err, ErrNotFound) {
-		http.NotFound(w, r)
-		return
-	} else if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	cats, err := s.cfg.DB.Categories(r.Context())
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	f := editForm{Txn: t, Categories: cats}
-	if t.CategoryID != nil && (t.Source == "manual" || t.Source == "claude") {
-		f.Selected = *t.CategoryID
-	}
-	s.render(w, r, "transactions", "edit", f)
-}
-
-func (s *Server) saveTxn(w http.ResponseWriter, r *http.Request) {
+// setCategory saves a category picked from a row's chip and responds with
+// that row, plus out-of-band updates for the rows whose guess changed.
+func (s *Server) setCategory(w http.ResponseWriter, r *http.Request) {
 	if !s.parseForm(w, r) {
 		return
 	}
@@ -128,12 +131,7 @@ func (s *Server) saveTxn(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "Bad category")
 		return
 	}
-	note := strings.TrimSpace(r.PostForm.Get("note"))
-	if len(note) > 500 {
-		badRequest(w, "Note is too long (500 characters at most)")
-		return
-	}
-	guessed, err := s.cfg.DB.SaveTxn(r.Context(), account, id, category, note)
+	changed, err := s.cfg.DB.SetCategory(r.Context(), account, id, category)
 	if errors.Is(err, ErrNotFound) {
 		http.NotFound(w, r)
 		return
@@ -141,7 +139,7 @@ func (s *Server) saveTxn(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "No such category")
 		return
 	} else if err != nil {
-		s.fail(w, r, fmt.Errorf("save transaction: %w", err))
+		s.fail(w, r, fmt.Errorf("set category: %w", err))
 		return
 	}
 	t, err := s.cfg.DB.Txn(r.Context(), account, id)
@@ -149,14 +147,39 @@ func (s *Server) saveTxn(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	t.Open = true
-	switch {
-	case guessed == 1:
-		t.Message = "Saved. Updated the guess for 1 similar transaction."
-	case guessed > 1:
-		t.Message = fmt.Sprintf("Saved. Updated the guess for %s similar transactions.", commas(guessed))
-	default:
-		t.Message = "Saved."
+	p := rowsPage{Rows: []txnRow{{Txn: t}}}
+	others, err := s.cfg.DB.TxnsByKey(r.Context(), changed)
+	if err != nil {
+		s.fail(w, r, err)
+		return
 	}
-	s.render(w, r, "transactions", "txn", t)
+	for _, o := range others {
+		o.OOB = true
+		p.Rows = append(p.Rows, txnRow{Txn: o})
+	}
+	if p.Categories, err = s.cfg.DB.Categories(r.Context()); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.render(w, r, "transactions", "rows", p)
+}
+
+func (s *Server) setNote(w http.ResponseWriter, r *http.Request) {
+	if !s.parseForm(w, r) {
+		return
+	}
+	note := strings.TrimSpace(r.PostForm.Get("note"))
+	if len(note) > 500 {
+		badRequest(w, "Note is too long (500 characters at most)")
+		return
+	}
+	err := s.cfg.DB.SetNote(r.Context(), r.PostForm.Get("account"), r.PostForm.Get("id"), note)
+	if errors.Is(err, ErrNotFound) {
+		http.NotFound(w, r)
+		return
+	} else if err != nil {
+		s.fail(w, r, fmt.Errorf("set note: %w", err))
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

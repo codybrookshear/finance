@@ -11,11 +11,13 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"path"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -69,17 +71,18 @@ func New(cfg Config) (*Server, error) {
 // Handler returns the app with all middleware applied.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	// GET patterns also match HEAD; other methods get 405. The one POST
-	// route is an edit; CrossOriginProtection (below) refuses it from any
-	// other site.
+	// GET patterns also match HEAD; other methods get 405. The POST routes
+	// are edits; CrossOriginProtection (below) refuses them from any other
+	// site.
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/transactions", http.StatusSeeOther)
 	})
 	mux.HandleFunc("GET /transactions", s.transactions)
 	mux.HandleFunc("GET /spending", s.spending)
 	mux.HandleFunc("GET /networth", s.networth)
-	mux.HandleFunc("GET /transactions/edit", s.editForm)
-	mux.HandleFunc("POST /transactions/edit", s.saveTxn)
+	mux.HandleFunc("POST /transactions/category", s.setCategory)
+	mux.HandleFunc("POST /transactions/note", s.setNote)
+	mux.HandleFunc("GET /categories.css", s.categoriesCSS)
 	mux.HandleFunc("GET /static/", s.serveStatic)
 	csrf := http.NewCrossOriginProtection() // Sec-Fetch-Site / Origin checks on non-GET requests
 	return s.securityHeaders(s.logRequests(s.recoverPanics(s.authenticate(csrf.Handler(mux)))))
@@ -169,6 +172,26 @@ func (s *Server) recoverPanics(next http.Handler) http.Handler {
 	})
 }
 
+// categoriesCSS gives each category's chip its color: per-category classes,
+// since the CSP allows no inline styles. Tiny, so it isn't cached.
+func (s *Server) categoriesCSS(w http.ResponseWriter, r *http.Request) {
+	cats, err := s.cfg.DB.Categories(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	var b strings.Builder
+	for _, c := range cats {
+		if c.Hue == nil {
+			fmt.Fprintf(&b, ".c-%d{--chip-s:0%%}\n", c.ID)
+		} else {
+			fmt.Fprintf(&b, ".c-%d{--chip-h:%d}\n", c.ID, *c.Hue)
+		}
+	}
+	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	io.WriteString(w, b.String())
+}
+
 // serveStatic serves only .js and .css files. URLs carry ?v=<content hash>,
 // so they can be cached privately (never by Cloudflare: "private").
 func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
@@ -203,8 +226,15 @@ func (s *Server) funcs() template.FuncMap {
 	return template.FuncMap{
 		"money":  formatMoney,
 		"commas": commas,
-		"neg":    isNegative,
-		"asset":  func(name string) string { return "/static/" + name + "?v=" + s.version },
+		// withCats pairs a row with the category list for its picker.
+		"withCats": func(t Txn, cats []Category) any {
+			return struct {
+				Txn
+				Categories []Category
+			}{t, cats}
+		},
+		"neg":   isNegative,
+		"asset": func(name string) string { return "/static/" + name + "?v=" + s.version },
 		"day": func(t time.Time) string {
 			t = t.In(s.cfg.Location)
 			if t.Year() == time.Now().In(s.cfg.Location).Year() {

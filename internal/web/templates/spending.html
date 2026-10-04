@@ -16,13 +16,13 @@ favoring your most recent choices.</p>
   <ul class="list cats">
     {{- range .Categories}}
     <li>
-      <span class="what">{{.Label}}</span>
+      <span class="what"><span class="chip sm{{if .CategoryID}} c-{{.CategoryID}}{{else}} none{{end}}" aria-hidden="true">{{if .Emoji}}{{.Emoji}}{{else}}?{{end}}</span> {{.Label}}</span>
       <span class="amt">{{money .Amount ""}}</span>
       <meter min="0" max="{{$m.Spent}}" value="{{.Amount}}"></meter>
     </li>
     {{- end}}
     {{- range .IncomeCategories}}
-    <li class="income"><span class="what">{{.Label}} (in)</span><span class="amt in">{{money .Amount ""}}</span></li>
+    <li class="income"><span class="what"><span class="chip sm{{if .CategoryID}} c-{{.CategoryID}}{{else}} none{{end}}" aria-hidden="true">{{if .Emoji}}{{.Emoji}}{{else}}?{{end}}</span> {{.Label}} (in)</span><span class="amt in">{{money .Amount ""}}</span></li>
     {{- end}}
   </ul>
   <p><a href="/transactions?from={{.From}}&amp;to={{.To}}">Transactions in {{monthName .YearMonth}}</a></p>

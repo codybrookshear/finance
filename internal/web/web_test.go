@@ -86,7 +86,7 @@ func TestAccessRequiredEverywhere(t *testing.T) {
 	}
 	h := srv.Handler()
 
-	for _, p := range []string{"/", "/transactions", "/spending", "/networth", "/static/app.js", "/nope"} {
+	for _, p := range []string{"/", "/transactions", "/spending", "/networth", "/categories.css", "/static/app.js", "/nope"} {
 		res := get(t, h, p)
 		if res.StatusCode != http.StatusForbidden {
 			t.Errorf("GET %s without a token: %d, want 403", p, res.StatusCode)
@@ -263,7 +263,7 @@ func TestPages(t *testing.T) {
 		}
 		next := strings.ReplaceAll(m[1], "&amp;", "&")
 		rows := page(next, "HX-Request", "true", "HX-Target", "more")
-		if strings.Contains(rows, "<html") || strings.Contains(rows, "<form") {
+		if strings.Contains(rows, "<html") || strings.Contains(rows, `role="search"`) {
 			t.Error("scroll response should be rows only")
 		}
 		if n := strings.Count(rows, "<details>"); n != 15 {
@@ -402,46 +402,52 @@ func TestEditing(t *testing.T) {
 		}
 	})
 
-	t.Run("edit form", func(t *testing.T) {
-		b := body(t, get(t, h, "/transactions/edit?account=card&id=groc"))
-		for _, want := range []string{`<select name="category">`, `>Groceries</option>`, "similar transactions will follow"} {
+	t.Run("chips", func(t *testing.T) {
+		b := page(t, h, "/transactions")
+		for _, want := range []string{`<li class="day">`, `<select name="category" aria-label="Category: none">`,
+			`>🛒 Groceries</option>`, `aria-label="Category: Groceries"`, `href="/categories.css"`} {
 			if !strings.Contains(b, want) {
 				t.Errorf("missing %q", want)
 			}
 		}
-		if strings.Contains(b, "rule") {
-			t.Error("rules are gone")
-		}
-		if res := get(t, h, "/transactions/edit?account=old&id=secret"); res.StatusCode != http.StatusNotFound {
-			t.Errorf("hidden account: %d", res.StatusCode)
+		css := page(t, h, "/categories.css")
+		if !strings.Contains(css, "--chip-h:115") || !strings.Contains(css, "--chip-s:0%") {
+			t.Errorf("categories.css:\n%s", css)
 		}
 	})
 
 	t.Run("similar transactions follow", func(t *testing.T) {
-		res := post("/transactions/edit", url.Values{"account": {"chk"}, "id": {"c00"},
-			"category": {catID("Dining")}, "note": {"with Sam"}})
+		res := post("/transactions/category", url.Values{"account": {"chk"}, "id": {"c00"}, "category": {catID("Dining")}})
 		b := body(t, res)
-		if res.StatusCode != http.StatusOK || !strings.Contains(b, "<details open>") ||
-			!strings.Contains(b, "with Sam") || !strings.Contains(b, "Updated the guess for 59 similar transactions") {
-			t.Fatalf("save: %d\n%s", res.StatusCode, b)
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("set category: %d\n%s", res.StatusCode, b)
 		}
-		if c, src, note := state("c00"); c != "Dining" || src != "manual" || note != "with Sam" {
-			t.Errorf("c00 = %q %q %q", c, src, note)
+		if n := strings.Count(b, `hx-swap-oob="true"`); n != 59 {
+			t.Errorf("%d rows refreshed, want the 59 newly guessed", n)
+		}
+		if c, src, _ := state("c00"); c != "Dining" || src != "manual" {
+			t.Errorf("c00 = %q %q", c, src)
 		}
 		if c, src, _ := state("c02"); c != "Dining" || src != "learned" {
 			t.Errorf("c02 = %q %q, want a Dining guess", c, src)
 		}
-		if b := page(t, h, "/transactions?category=learned"); !strings.Contains(b, "59 transactions") || !strings.Contains(b, "Dining (guess)") {
+		if res := post("/transactions/note", url.Values{"account": {"chk"}, "id": {"c00"}, "note": {"with Sam"}}); res.StatusCode != http.StatusNoContent {
+			t.Errorf("note: %d", res.StatusCode)
+		}
+		if c, _, note := state("c00"); c != "Dining" || note != "with Sam" {
+			t.Errorf("after note: %q %q", c, note)
+		}
+		if b := page(t, h, "/transactions?category=learned"); !strings.Contains(b, "59 transactions") || !strings.Contains(b, "Category: Dining (guess)") {
 			t.Error("Guessed filter")
 		}
-		if b := page(t, h, "/transactions?category=none"); strings.Contains(b, "Coffee Shop") || !strings.Contains(b, "Payroll") {
+		if b := page(t, h, "/transactions?category=none"); strings.Contains(b, "Coffee Shop") || !strings.Contains(b, "Employer") {
 			t.Error("Uncategorized filter")
 		}
 	})
 
 	t.Run("correcting a guess", func(t *testing.T) {
 		// Two equally recent, conflicting choices: no confident guess.
-		post("/transactions/edit", url.Values{"account": {"chk"}, "id": {"c05"}, "category": {catID("Groceries")}})
+		post("/transactions/category", url.Values{"account": {"chk"}, "id": {"c05"}, "category": {catID("Groceries")}})
 		if c, src, _ := state("c02"); c != "" || src != "" {
 			t.Errorf("c02 = %q %q, want no guess", c, src)
 		}
@@ -455,10 +461,7 @@ func TestEditing(t *testing.T) {
 			t.Errorf("history: was %q %q, want the Dining guess", prev, prevSource)
 		}
 		// Back to automatic: c05 and the rest follow the remaining choice.
-		res := post("/transactions/edit", url.Values{"account": {"chk"}, "id": {"c05"}, "category": {""}})
-		if b := body(t, res); !strings.Contains(b, "Updated the guess for 59 similar transactions") {
-			t.Errorf("automatic: %s", b)
-		}
+		post("/transactions/category", url.Values{"account": {"chk"}, "id": {"c05"}, "category": {""}})
 		if c, src, _ := state("c05"); c != "Dining" || src != "learned" {
 			t.Errorf("c05 = %q %q", c, src)
 		}
@@ -466,16 +469,18 @@ func TestEditing(t *testing.T) {
 
 	t.Run("bad requests", func(t *testing.T) {
 		for name, tc := range map[string]struct {
+			path string
 			form url.Values
 			want int
 		}{
-			"no such category": {url.Values{"account": {"chk"}, "id": {"c03"}, "category": {"999999"}}, 400},
-			"bad category":     {url.Values{"account": {"chk"}, "id": {"c03"}, "category": {"abc"}}, 400},
-			"long note":        {url.Values{"account": {"chk"}, "id": {"c03"}, "note": {strings.Repeat("x", 501)}}, 400},
-			"no such txn":      {url.Values{"account": {"chk"}, "id": {"nope"}}, 404},
-			"hidden account":   {url.Values{"account": {"old"}, "id": {"secret"}}, 404},
+			"no such category": {"/transactions/category", url.Values{"account": {"chk"}, "id": {"c03"}, "category": {"999999"}}, 400},
+			"bad category":     {"/transactions/category", url.Values{"account": {"chk"}, "id": {"c03"}, "category": {"abc"}}, 400},
+			"no such txn":      {"/transactions/category", url.Values{"account": {"chk"}, "id": {"nope"}}, 404},
+			"hidden account":   {"/transactions/category", url.Values{"account": {"old"}, "id": {"secret"}}, 404},
+			"long note":        {"/transactions/note", url.Values{"account": {"chk"}, "id": {"c03"}, "note": {strings.Repeat("x", 501)}}, 400},
+			"note, no txn":     {"/transactions/note", url.Values{"account": {"chk"}, "id": {"nope"}, "note": {"x"}}, 404},
 		} {
-			if res := post("/transactions/edit", tc.form); res.StatusCode != tc.want {
+			if res := post(tc.path, tc.form); res.StatusCode != tc.want {
 				t.Errorf("%s: %d, want %d", name, res.StatusCode, tc.want)
 			}
 		}
@@ -483,10 +488,10 @@ func TestEditing(t *testing.T) {
 
 	t.Run("cross-site requests refused", func(t *testing.T) {
 		form := url.Values{"account": {"chk"}, "id": {"c04"}, "category": {catID("Travel")}}
-		if res := post("/transactions/edit", form, "Sec-Fetch-Site", "cross-site"); res.StatusCode != http.StatusForbidden {
+		if res := post("/transactions/category", form, "Sec-Fetch-Site", "cross-site"); res.StatusCode != http.StatusForbidden {
 			t.Errorf("Sec-Fetch-Site cross-site: %d", res.StatusCode)
 		}
-		if res := post("/transactions/edit", form, "Sec-Fetch-Site", "", "Origin", "https://evil.example"); res.StatusCode != http.StatusForbidden {
+		if res := post("/transactions/note", url.Values{"account": {"chk"}, "id": {"c04"}, "note": {"x"}}, "Sec-Fetch-Site", "", "Origin", "https://evil.example"); res.StatusCode != http.StatusForbidden {
 			t.Errorf("foreign Origin: %d", res.StatusCode)
 		}
 		if c, _, _ := state("c04"); c == "Travel" {

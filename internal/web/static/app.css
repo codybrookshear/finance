@@ -53,7 +53,8 @@ header nav {
 
 header nav a {
   flex: 1;
-  padding: 0.8rem 0.5rem;
+  padding: 0.75rem 0.5rem;
+  line-height: 1.5rem; /* nav is 3rem + 1px border: day separators stick below it */
   text-align: center;
   text-decoration: none;
   color: var(--muted);
@@ -143,8 +144,6 @@ details.month > summary {
 }
 
 .list > li { padding: 0.65rem 0.8rem; }
-.txns > li { padding: 0; display: block; }
-.txns summary { padding: 0.65rem 0.8rem; }
 
 summary { cursor: pointer; list-style: none; }
 summary::-webkit-details-marker { display: none; }
@@ -153,18 +152,78 @@ summary::-webkit-details-marker { display: none; }
 .amt { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .amt.in { color: var(--in); }
 .meta { grid-column: 1 / -1; color: var(--muted); font-size: 0.8rem; }
-.pending .what::after { content: " •"; color: var(--pending); }
 
+/* Transactions: a date separator per day, then chip | merchant | amount.
+   overflow stays visible so the separators stick to the page, not the list. */
+.list.txns { overflow: visible; }
+.txns > li:first-child { border-radius: var(--radius) var(--radius) 0 0; }
+.txns > li:last-child { border-radius: 0 0 var(--radius) var(--radius); }
+.txns > li.day {
+  position: sticky;
+  top: calc(3rem + 1px + env(safe-area-inset-top));
+  z-index: 1;
+  display: block;
+  padding: 0.35rem 0.8rem;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.txns > li.txn {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 0.65rem;
+  align-items: start;
+  padding: 0.5rem 0.8rem;
+}
+.txns > li.txn summary { min-height: 2.2rem; align-items: center; }
+.txns .pending .amt { color: var(--pending); font-style: italic; }
 .txns dl {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 0.2rem 0.75rem;
-  margin: 0;
-  padding: 0 0.8rem 0.75rem;
+  margin: 0.4rem 0 0.5rem;
   font-size: 0.85rem;
 }
 .txns dt { color: var(--muted); }
 .txns dd { margin: 0; overflow-wrap: anywhere; }
+form.note { margin: 0 0 0.25rem; }
+form.note input { font-size: 0.9rem; padding: 0.4rem 0.55rem; }
+
+/* Category chips. Each category's hue comes from /categories.css. */
+.chip {
+  --chip-h: 0;
+  --chip-s: 70%;
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  margin: 0;
+  border-radius: 999px;
+  background: hsl(var(--chip-h) var(--chip-s) 88%);
+  font-size: 1.15rem;
+  line-height: 1;
+}
+@media (prefers-color-scheme: dark) {
+  .chip { background: hsl(var(--chip-h) calc(var(--chip-s) * 0.6) 28%); }
+}
+.chip.guess { outline: 2px dashed hsl(var(--chip-h) var(--chip-s) 45%); outline-offset: -2px; }
+.chip.none { background: transparent; border: 1.5px dashed var(--muted); color: var(--muted); font-weight: 700; font-size: 1rem; }
+.chip.sm { width: 1.6rem; height: 1.6rem; font-size: 0.9rem; vertical-align: middle; margin-right: 0.3rem; }
+/* The native picker covers the chip, invisible: tapping the chip opens it. */
+.chip select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 16px; /* no zoom on iOS */
+}
+.chip:focus-within { box-shadow: 0 0 0 2px var(--accent); }
 
 .list > li.more, .list > li.empty { display: block; text-align: center; color: var(--muted); }
 
@@ -185,17 +244,3 @@ details.month p { margin: 0; padding: 0.6rem 0.8rem; font-size: 0.9rem; }
 .chart { width: 100%; min-height: 240px; color: var(--accent); margin-bottom: 1rem; }
 .chart .u-axis { color: var(--muted); }
 
-/* Editing a transaction */
-form.edit {
-  display: grid;
-  gap: 0.5rem;
-  padding: 0 0.8rem 0.9rem;
-  font-size: 0.9rem;
-}
-form.edit label { display: grid; gap: 0.25rem; color: var(--muted); }
-form.edit label.check { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.25rem; }
-form.edit .hint { margin: 0; color: var(--muted); font-size: 0.8rem; }
-form.edit .actions { display: flex; gap: 1rem; align-items: center; }
-form.edit .actions button { width: auto; padding: 0.5rem 1.4rem; }
-
-form.edit + .saved, .saved { margin: 0 0.8rem 0.5rem; color: var(--in); font-size: 0.85rem; }

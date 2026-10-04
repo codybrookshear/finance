@@ -20,14 +20,26 @@ func (s *Server) base(r *http.Request, page string) (base, error) {
 	return base{Page: page, Email: userEmail(r.Context()), LastSync: last}, err
 }
 
+// txnRow is one transaction in the list. Day is set on the first row of each
+// day, for the date separator.
+type txnRow struct {
+	Txn
+	Day string
+}
+
+// rowsPage is what the "rows" template renders.
+type rowsPage struct {
+	Rows       []txnRow
+	Categories []Category // for each row's category picker
+	Next       string     // URL of the next page; "" at the end
+}
+
 type txnPage struct {
 	base
+	rowsPage
 	Q, Account, From, To string // the filter as typed, echoed into the form
 	Category             string
 	Accounts             []Account
-	Categories           []Category
-	Txns                 []Txn
-	Next                 string // URL of the next page; "" at the end
 	Count                int
 	Totals               []Total
 	Filtered             bool
@@ -60,21 +72,31 @@ func (s *Server) transactions(w http.ResponseWriter, r *http.Request) {
 	}
 	p.Filtered = p.Q != "" || p.Account != "" || p.From != "" || p.To != "" || p.Category != ""
 
-	var err error
-	var next *Cursor
-	if p.Txns, next, err = s.cfg.DB.Transactions(ctx, f); err != nil {
+	txns, next, err := s.cfg.DB.Transactions(ctx, f)
+	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
+	prevDay := "" // the day the previous page ended on: don't repeat its header
+	if _, ok := s.parseDay(q.Get("day")); ok && f.After != nil {
+		prevDay = q.Get("day")
+	}
+	var lastDay string
+	p.Rows, lastDay = s.groupByDay(txns, prevDay)
 	if next != nil {
 		q.Set("after", next.String())
+		q.Set("day", lastDay)
 		p.Next = "/transactions?" + q.Encode()
+	}
+	if p.Categories, err = s.cfg.DB.Categories(ctx); err != nil {
+		s.fail(w, r, err)
+		return
 	}
 
 	// htmx requests name the element they'll replace.
 	htmx := r.Header.Get("HX-Request") == "true"
 	if htmx && r.Header.Get("HX-Target") == "more" { // infinite scroll
-		s.render(w, r, "transactions", "rows", p)
+		s.render(w, r, "transactions", "rows", p.rowsPage)
 		return
 	}
 	if p.Count, p.Totals, err = s.cfg.DB.TxnSummary(ctx, f); err != nil {
@@ -93,11 +115,35 @@ func (s *Server) transactions(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	if p.Categories, err = s.cfg.DB.Categories(ctx); err != nil {
-		s.fail(w, r, err)
-		return
-	}
 	s.render(w, r, "transactions", "layout.html", p)
+}
+
+// groupByDay marks the first row of each local day with a label for the
+// date separator, and returns the last row's day (YYYY-MM-DD).
+func (s *Server) groupByDay(txns []Txn, prevDay string) ([]txnRow, string) {
+	now := time.Now().In(s.cfg.Location)
+	today, yesterday := now.Format(time.DateOnly), now.AddDate(0, 0, -1).Format(time.DateOnly)
+	rows := make([]txnRow, len(txns))
+	for i, t := range txns {
+		rows[i].Txn = t
+		at := t.At.In(s.cfg.Location)
+		day := at.Format(time.DateOnly)
+		if day == prevDay {
+			continue
+		}
+		prevDay = day
+		switch {
+		case day == today:
+			rows[i].Day = "Today"
+		case day == yesterday:
+			rows[i].Day = "Yesterday"
+		case at.Year() == now.Year():
+			rows[i].Day = at.Format("Mon, Jan 2")
+		default:
+			rows[i].Day = at.Format("Mon, Jan 2, 2006")
+		}
+	}
+	return rows, prevDay
 }
 
 type monthView struct {
