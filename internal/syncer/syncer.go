@@ -44,7 +44,7 @@ func DefaultConfig() Config {
 		Location:           time.UTC,
 		Window:             45 * 24 * time.Hour, // SimpleFIN's recommended maximum range
 		Overlap:            5 * 24 * time.Hour,
-		MaxBackfillPerRun:  3,
+		MaxBackfillPerRun:  2, // with 8 runs/day: ≤24 requests/day while backfilling
 		MaxLookback:        3 * 365 * 24 * time.Hour,
 		EmptyWindowsToStop: 2,
 		Now:                time.Now,

@@ -48,7 +48,7 @@ Single user (me). Security is the top priority; prefer fewer dependencies.
   port 22 closed at the DO firewall (2026-10-03).
 - Admin workstation is an Ubuntu desktop (not a Mac); droplet SSH key `~/.ssh/finance_ed25519`.
   Domain: `brookshear.party` (Cloudflare Registrar, paid to 2028-10-03); SSH hostname `ssh.brookshear.party`.
-- Sync deployed to the droplet (2026-10-03), timer 4×/day.
+- Sync deployed to the droplet (2026-10-03), timer every 3 hours.
 - Web UI (search, monthly net income/spending, net worth, categorization with learned
   guesses, transfer detection) runs locally via `make dev`
   (http://<dev box>:8080, demo data, Access check off). Not deployed yet.

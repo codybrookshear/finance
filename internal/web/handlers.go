@@ -13,11 +13,36 @@ type base struct {
 	Page     string
 	Email    string
 	LastSync *time.Time
+	NextSync string // "next ~1:40 AM", or "overdue" when syncs seem to have stopped
 }
+
+// The sync schedule, as in deploy/finance/finance-sync.timer: every 3 hours
+// at :40, starting 1:40 AM local time.
+const (
+	syncFirstHour = 1
+	syncEvery     = 3 * time.Hour
+	syncMinute    = 40
+)
 
 func (s *Server) base(r *http.Request, page string) (base, error) {
 	last, err := s.cfg.DB.LastSync(r.Context())
-	return base{Page: page, Email: userEmail(r.Context()), LastSync: last}, err
+	b := base{Page: page, Email: userEmail(r.Context()), LastSync: last}
+	now := time.Now().In(s.cfg.Location)
+	if last != nil && now.Sub(*last) > syncEvery+time.Hour {
+		b.NextSync = "overdue"
+	} else {
+		b.NextSync = "next ~" + nextSync(now).Format("3:04 PM")
+	}
+	return b, err
+}
+
+// nextSync is the first scheduled sync after now (in now's location).
+func nextSync(now time.Time) time.Time {
+	t := time.Date(now.Year(), now.Month(), now.Day(), syncFirstHour, syncMinute, 0, 0, now.Location())
+	for !t.After(now) {
+		t = t.Add(syncEvery)
+	}
+	return t
 }
 
 // txnRow is one transaction in the list. Day is set on the first row of each

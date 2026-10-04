@@ -173,7 +173,8 @@ func (s *Server) setNote(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "Note is too long (500 characters at most)")
 		return
 	}
-	err := s.cfg.DB.SetNote(r.Context(), r.PostForm.Get("account"), r.PostForm.Get("id"), note)
+	account, id := r.PostForm.Get("account"), r.PostForm.Get("id")
+	err := s.cfg.DB.SetNote(r.Context(), account, id, note)
 	if errors.Is(err, ErrNotFound) {
 		http.NotFound(w, r)
 		return
@@ -181,5 +182,17 @@ func (s *Server) setNote(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, fmt.Errorf("set note: %w", err))
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	// The note is the row's title now: send the row back, details still open.
+	t, err := s.cfg.DB.Txn(r.Context(), account, id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	t.Open = true
+	p := rowsPage{Rows: []txnRow{{Txn: t}}}
+	if p.Categories, err = s.cfg.DB.Categories(r.Context()); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.render(w, r, "transactions", "rows", p)
 }

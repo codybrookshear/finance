@@ -8,7 +8,7 @@
       hx-get="/transactions" hx-target="#results" hx-swap="outerHTML" hx-push-url="true"
       hx-trigger="submit, input delay:300ms from:#q, change">
   <input id="q" type="search" name="q" value="{{.Q}}" maxlength="200" autocomplete="off"
-         enterkeyhint="search" placeholder="Search payee, description or amount" aria-label="Search">
+         enterkeyhint="search" placeholder="Search payee, note, description or amount" aria-label="Search">
   <div class="row">
     <select name="account" aria-label="Account">
       <option value="">All accounts</option>
@@ -73,22 +73,23 @@
       {{- end}}
     </select>
   </form>
-  <details>
+  <details{{if .Open}} open{{end}}>
     <summary>
-      <span class="what">{{.Merchant}}</span>
+      <span class="what">{{.Title}}</span>
       <span class="amt{{if neg .Amount}} out{{else}} in{{end}}">{{money .Amount .Currency}}</span>
     </summary>
     <dl>
+      {{- if .Note}}<dt>Merchant</dt><dd>{{.Merchant}}</dd>{{end}}
       <dt>Account</dt><dd>{{.Account}}</dd>
       {{- if .Category}}<dt>Category</dt><dd>{{.CategoryEmoji}} {{.Category}}{{if eq .Source "learned"}} (guessed from similar transactions you categorized){{else if eq .Source "auto"}} (detected: money moved between your accounts){{end}}</dd>{{end}}
       {{- if and .Payee .Description}}<dt>Bank text</dt><dd>{{.Description}}</dd>{{end}}
       {{- if .Memo}}<dt>Memo</dt><dd>{{.Memo}}</dd>{{end}}
       {{- if .Pending}}<dt>Status</dt><dd>Pending</dd>{{end}}
     </dl>
-    <form class="note" hx-post="/transactions/note" hx-trigger="change, submit" hx-swap="none">
+    <form class="note" hx-post="/transactions/note" hx-trigger="change, submit" hx-target="closest li" hx-swap="outerHTML">
       <input type="hidden" name="account" value="{{.AccountID}}">
       <input type="hidden" name="id" value="{{.ID}}">
-      <input name="note" value="{{.Note}}" placeholder="Add a note" maxlength="500" autocomplete="off" aria-label="Note">
+      <input name="note" value="{{.Note}}" placeholder="Add a note (it becomes the title)" maxlength="500" autocomplete="off" aria-label="Note, shown as the title">
     </form>
   </details>
 </li>

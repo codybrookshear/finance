@@ -1,13 +1,15 @@
-# Four syncs a day, comfortably under SimpleFIN Bridge's ~24 requests/day.
-# Local times, chosen to finish well before unattended-upgrades may reboot
-# the droplet at 04:30 UTC (20:30 or 21:30 local). The day's last run sets
-# that day's balance snapshot.
+# Every 3 hours (1:40, 4:40, ... local), so a newly connected bank shows up
+# within about 3 hours. SimpleFIN Bridge asks for at most ~24 requests/day:
+# each run makes 1 request plus at most 2 while history is being backfilled,
+# so 8 runs stay within it (and use 8/day once history is complete). None
+# runs near the 04:30 UTC unattended-upgrades reboot (20:30 or 21:30 local).
+# The web footer's "next sync" assumes this interval (syncEvery in web.go).
 
 [Unit]
-Description=Finance: SimpleFIN sync four times a day
+Description=Finance: SimpleFIN sync every 3 hours
 
 [Timer]
-OnCalendar=*-*-* 01,07,13,19:40:00 America/Los_Angeles
+OnCalendar=*-*-* 01/3:40:00 America/Los_Angeles
 RandomizedDelaySec=15min
 Persistent=true
 

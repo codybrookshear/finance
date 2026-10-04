@@ -34,6 +34,7 @@ type Txn struct {
 	Note                             string
 	Pending, Transfer                bool
 	OOB                              bool // view only: render as an htmx out-of-band swap
+	Open                             bool // view only: render with the details open
 }
 
 // DOMID identifies the transaction's row in the page.
@@ -52,12 +53,21 @@ func (t Txn) Chosen() int32 {
 	return 0
 }
 
-// Merchant is the name shown in the list: the bank's payee if it gave one.
+// Merchant is SimpleFIN's name for the other party: the payee (a cleaned-up
+// name, from SimpleFIN Bridge) if there is one, else the bank's description.
 func (t Txn) Merchant() string {
 	if p := strings.TrimSpace(t.Payee); p != "" {
 		return p
 	}
 	return t.Description
+}
+
+// Title is what the list shows: your note if you wrote one, else the merchant.
+func (t Txn) Title() string {
+	if n := strings.TrimSpace(t.Note); n != "" {
+		return n
+	}
+	return t.Merchant()
 }
 
 // Category is one of the categories a transaction can have.
@@ -156,7 +166,7 @@ const (
 		WHERE NOT a.hidden
 		  AND ($1::text = ''
 		       OR t.search @@ websearch_to_tsquery('simple', $1)
-		       OR t.description ILIKE $2 OR t.payee ILIKE $2 OR t.memo ILIKE $2
+		       OR t.description ILIKE $2 OR t.payee ILIKE $2 OR t.memo ILIKE $2 OR t.note ILIKE $2
 		       OR ($3::text IS NOT NULL AND abs(t.amount) = $3::text::numeric))
 		  AND ($4::text = '' OR t.account_id = $4)
 		  AND ($5::timestamptz IS NULL OR ` + txnSortAt + ` >= $5)

@@ -74,10 +74,10 @@ make dev              # postgres + migrate + one sync pass
 ## How sync works
 
 Each run: one incremental fetch (last success − 5 days → now, including pending)
-that also records each account's balance for today, then up to 3 backfill requests
+that also records each account's balance for today, then up to 2 backfill requests
 walking back in 45-day windows (SimpleFIN's recommended maximum) until two windows come back
-empty or 3 years is reached.
-At ~4 runs/day that stays under SimpleFIN Bridge's ~24 requests/day guidance.
+empty or 3 years is reached. A newly connected account restarts the backfill.
+At 8 runs/day (every 3 hours) that stays within SimpleFIN Bridge's ~24 requests/day guidance.
 
 - Pending transactions that disappear (posted under a new ID, or voided) are removed.
 - Balance history only exists from the first sync onward, so deploy sync early.

@@ -446,10 +446,16 @@ func TestEditing(t *testing.T) {
 		if c, src, _ := state("c02"); c != "Dining" || src != "learned" {
 			t.Errorf("c02 = %q %q, want a Dining guess", c, src)
 		}
-		if res := post("/transactions/note", url.Values{"account": {"chk"}, "id": {"c00"}, "note": {"with Sam"}}); res.StatusCode != http.StatusNoContent {
-			t.Errorf("note: %d", res.StatusCode)
+		res = post("/transactions/note", url.Values{"account": {"chk"}, "id": {"c00"}, "note": {"Lunch with Sam"}})
+		b = body(t, res)
+		if res.StatusCode != http.StatusOK || !strings.Contains(b, `<span class="what">Lunch with Sam</span>`) ||
+			!strings.Contains(b, "<details open>") || !strings.Contains(b, "<dt>Merchant</dt><dd>Coffee Shop</dd>") {
+			t.Errorf("note: %d\n%s", res.StatusCode, b)
 		}
-		if c, _, note := state("c00"); c != "Dining" || note != "with Sam" {
+		if b := page(t, h, "/transactions?q=sam"); !strings.Contains(b, "1 transaction ") || !strings.Contains(b, "Lunch with Sam") {
+			t.Error("search should find notes")
+		}
+		if c, _, note := state("c00"); c != "Dining" || note != "Lunch with Sam" {
 			t.Errorf("after note: %q %q", c, note)
 		}
 		if b := page(t, h, "/transactions?category=learned"); !strings.Contains(b, "59 transactions") || !strings.Contains(b, "Category: Dining (guess)") {

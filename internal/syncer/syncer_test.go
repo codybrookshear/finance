@@ -149,7 +149,8 @@ func TestSyncEndToEnd(t *testing.T) {
 	cfg.Location = la
 	cfg.Now = func() time.Time { return clock }
 	cfg.MaxLookback = 400 * day
-	cfg.Window = 89 * day // the scenario below is sized for 89-day windows, whatever the default
+	cfg.Window = 89 * day     // the scenario below is sized for 89-day windows
+	cfg.MaxBackfillPerRun = 3 // ... and 3 of them per run, whatever the defaults
 	s := &Syncer{Store: &store.Store{Pool: pool}, Client: bank, Cfg: cfg,
 		Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 
@@ -284,6 +285,7 @@ func TestNewAccountGetsHistory(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Now = func() time.Time { return clock }
 	cfg.MaxLookback = 400 * day
+	cfg.MaxBackfillPerRun = 3 // enough to reach 4 months back in one run
 	s := &Syncer{Store: &store.Store{Pool: pool}, Client: bank, Cfg: cfg,
 		Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 

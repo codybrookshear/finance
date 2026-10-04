@@ -26,7 +26,7 @@
 <main>
 {{template "content" .}}
 </main>
-<footer>{{.Email}} · last sync {{stamp .LastSync}}</footer>
+<footer>{{.Email}} · last sync {{stamp .LastSync}}{{with .NextSync}} · {{.}}{{end}}</footer>
 {{- block "scripts" .}}{{end}}
 <script src="{{asset "app.js"}}"></script>
 </body>

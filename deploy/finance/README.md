@@ -1,7 +1,7 @@
 # The app on the droplet
 
-Postgres, the SimpleFIN sync on a systemd timer (`finance-sync.timer`, four
-times a day), and the web UI at `finance.brookshear.party`.
+Postgres, the SimpleFIN sync on a systemd timer (`finance-sync.timer`, every
+3 hours), and the web UI at `finance.brookshear.party`.
 
 **Design choices.**
 - Images are built on your workstation from the committed HEAD and copied over
@@ -39,8 +39,9 @@ On your workstation, signed in to 1Password (`eval "$(op signin)"`):
    without a login.
 5. `scripts/tunnel-deploy.sh finance` routes the hostname to the web app.
 
-The first sync runs backfill history 45 days at a time, 3 windows per run, so
-it fills in over a day or two. Balance history (for net worth) starts with the
+The first syncs backfill history 45 days at a time, 2 windows per run, so it
+fills in over a day or two. A bank connected later gets its history the same
+way, starting with the first sync that sees it. Balance history (for net worth) starts with the
 first sync.
 
 ## Day to day
