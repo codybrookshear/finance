@@ -24,9 +24,9 @@
       {{- end}}
     </select>
   </div>
-  <div class="row">
-    <input type="date" name="from" value="{{.From}}" aria-label="From">
-    <input type="date" name="to" value="{{.To}}" aria-label="To">
+  <div class="row dates">
+    <label><span>From</span><input type="date" name="from" value="{{.From}}"></label>
+    <label><span>To</span><input type="date" name="to" value="{{.To}}"></label>
   </div>
   <noscript><button type="submit">Search</button></noscript>
 </form>

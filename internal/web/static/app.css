@@ -28,6 +28,8 @@
 
 body {
   margin: 0;
+  /* Never scroll sideways. clip (unlike hidden) keeps sticky headers working. */
+  overflow-x: clip;
   background: var(--bg);
   color: var(--fg);
   font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -90,8 +92,10 @@ footer {
 .filters { display: grid; gap: 0.5rem; margin-bottom: 0.5rem; }
 .filters .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
 
+/* 16px everywhere: iPhone Safari zooms into any field with smaller text. */
 input, select, button {
   font: inherit;
+  font-size: 16px;
   width: 100%;
   min-width: 0;
   padding: 0.55rem 0.6rem;
@@ -102,6 +106,21 @@ input, select, button {
 }
 
 input[type="checkbox"] { width: auto; margin: 0; }
+
+/* Safari on iPhone draws date inputs natively, at a fixed width, with no
+   placeholder; this makes them fill their column, and the labels say which
+   is which. */
+.filters .dates label { display: grid; gap: 0.15rem; min-width: 0; color: var(--muted); font-size: 0.75rem; }
+input[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 2.65rem;
+  text-align: left;
+}
+input[type="date"]::-webkit-date-and-time-value { text-align: left; }
 
 button[type="submit"] {
   background: var(--accent);
@@ -189,7 +208,7 @@ summary::-webkit-details-marker { display: none; }
 .txns dt { color: var(--muted); }
 .txns dd { margin: 0; overflow-wrap: anywhere; }
 form.note { margin: 0 0 0.25rem; }
-form.note input { font-size: 0.9rem; padding: 0.4rem 0.55rem; }
+form.note input { padding: 0.4rem 0.55rem; }
 
 /* Category chips. Each category's hue comes from /categories.css. */
 .chip {
