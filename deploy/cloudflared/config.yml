@@ -39,7 +39,7 @@ ingress:
         required: true
         teamName: brookshear       # <team>.cloudflareaccess.com
         # Access app for finance.brookshear.party → Application Audience (AUD) tag
-        audTag: [REPLACE_ME_WEB_AUD]
+        audTag: [b377e7a1a9610f5cdcee7a0e963246fcc766318ca878d025f34aa117626aa53c]
 
   # Anything else, including hostnames not listed above.
   - service: http_status:404

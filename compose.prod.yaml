@@ -21,8 +21,9 @@ services:
     environment:
       WEB_SOCKET: /run/web/web.sock
       ACCESS_TEAM_DOMAIN: brookshear.cloudflareaccess.com
-      ACCESS_AUD: REPLACE_ME_WEB_AUD          # Access app for finance.brookshear.party
-      ACCESS_ALLOWED_EMAILS: REPLACE_ME_EMAIL
+      # The Access app's AUD tag. Not secret: Access puts it in every login redirect.
+      ACCESS_AUD: b377e7a1a9610f5cdcee7a0e963246fcc766318ca878d025f34aa117626aa53c  # gitleaks:allow
+      ACCESS_ALLOWED_EMAILS: you@example.com
       ACCESS_CERTS_FILE: /run/access/certs.json
     volumes:
       - /run/finance-web:/run/web
