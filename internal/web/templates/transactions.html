@@ -29,7 +29,6 @@
     <label><span>From</span><input type="date" name="from" value="{{.From}}" max="{{.To}}"></label>
     <label><span>To</span><input type="date" name="to" value="{{.To}}" min="{{.From}}"></label>
   </div>
-  {{- if .Dir}}<input type="hidden" name="dir" value="{{.Dir}}">{{end}}
   <noscript><button type="submit">Search</button></noscript>
 </form>
 {{template "results" .}}
@@ -38,7 +37,7 @@
 {{define "results" -}}
 <section id="results">
   <p class="summary">
-    {{commas .Count}} transaction{{if ne .Count 1}}s{{end}}{{if eq .Dir "in"}} (money in){{else if eq .Dir "out"}} (money out){{end}}
+    {{commas .Count}} transaction{{if ne .Count 1}}s{{end}}
     {{- range .Totals}} · total <span class="amt{{if neg .Amount}} out{{else}} in{{end}}">{{money .Amount .Currency}}</span>{{end}}
     {{- if .Filtered}} · <a href="/transactions">clear</a>{{end}}
   </p>

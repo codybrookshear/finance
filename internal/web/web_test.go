@@ -341,8 +341,7 @@ func TestPages(t *testing.T) {
 				break
 			}
 		}
-		// Rows link to that month's transactions in that category; the
-		// uncategorized ones split money in from money out.
+		// Rows link to that month's transactions in that category.
 		groceries := regexp.MustCompile(`href="(/transactions\?category=\d+&amp;from=[0-9-]+&amp;to=[0-9-]+)"`).FindStringSubmatch(b)
 		if groceries == nil {
 			t.Fatal("no category link")
@@ -350,16 +349,12 @@ func TestPages(t *testing.T) {
 		if b := page(strings.ReplaceAll(groceries[1], "&amp;", "&")); !strings.Contains(b, "1 transaction ") || !strings.Contains(b, "Grocer") {
 			t.Error("category link")
 		}
-		in := regexp.MustCompile(`href="(/transactions\?category=none&amp;dir=in&amp;from=[0-9-]+&amp;to=[0-9-]+)"`).FindStringSubmatch(b)
-		if in == nil {
-			t.Fatal("no uncategorized money-in link")
+		none := regexp.MustCompile(`href="(/transactions\?category=none&amp;from=[0-9-]+&amp;to=[0-9-]+)"`).FindStringSubmatch(b)
+		if none == nil {
+			t.Fatal("no uncategorized link")
 		}
-		b2 := page(strings.ReplaceAll(in[1], "&amp;", "&"))
-		if !strings.Contains(b2, "1 transaction (money in)") || !strings.Contains(b2, "Employer") || strings.Contains(b2, "Coffee Shop") {
-			t.Error("money-in link")
-		}
-		if !strings.Contains(b2, `<input type="hidden" name="dir" value="in">`) {
-			t.Error("the direction should survive the next search")
+		if b := page(strings.ReplaceAll(none[1], "&amp;", "&")); !strings.Contains(b, "Employer") || !strings.Contains(b, "Coffee Shop") {
+			t.Error("uncategorized link: money in and out")
 		}
 		for _, bad := range []string{"Pending", "500.00", "99.00"} { // pending, transfer, hidden
 			if strings.Contains(b, bad) {

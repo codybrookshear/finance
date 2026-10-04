@@ -100,7 +100,6 @@ type TxnFilter struct {
 	AccountID string
 	From, To  *time.Time // [From, To)
 	Category  string     // "" all, "none" uncategorized, "learned" guessed, or a category ID
-	Dir       string     // "" both, "in" money in, "out" money out
 	After     *Cursor    // next page: rows strictly older than this
 	Limit     int
 }
@@ -171,7 +170,7 @@ const (
 		FROM transactions t
 		JOIN accounts a ON a.id = t.account_id
 		LEFT JOIN categories c ON c.id = t.category_id`
-	// $1 query, $2 LIKE pattern, $3 amount (or NULL), $4 account, $5 from, $6 to, $7 category, $8 direction
+	// $1 query, $2 LIKE pattern, $3 amount (or NULL), $4 account, $5 from, $6 to, $7 category
 	txnWhere = `
 		WHERE ` + shownAccount + `
 		  AND ($1::text = ''
@@ -184,8 +183,7 @@ const (
 		  AND ($7::text = ''
 		       OR ($7 = 'none' AND t.category_id IS NULL AND NOT t.is_transfer)
 		       OR ($7 = 'learned' AND t.category_source = 'learned')
-		       OR t.category_id::text = $7)
-		  AND ($8::text = '' OR ($8 = 'in' AND t.amount > 0) OR ($8 = 'out' AND t.amount < 0))`
+		       OR t.category_id::text = $7)`
 	txnCols = `t.account_id, t.id, coalesce(a.display_name, a.name), a.currency, ` + txnSortAt + `,
 		round(t.amount, 2)::text, t.description, t.payee, t.memo,
 		coalesce(c.name, ''), t.category_id, coalesce(c.emoji, ''), coalesce(t.category_source, ''), coalesce(t.note, ''),
@@ -200,7 +198,7 @@ func (f TxnFilter) args() []any {
 	if m := amountRE.FindStringSubmatch(strings.ReplaceAll(q, ",", "")); m != nil {
 		amount = &m[1]
 	}
-	return []any{q, "%" + escapeLike(q) + "%", amount, f.AccountID, f.From, f.To, f.Category, f.Dir}
+	return []any{q, "%" + escapeLike(q) + "%", amount, f.AccountID, f.From, f.To, f.Category}
 }
 
 // escapeLike makes user input match literally inside ILIKE '%...%'.
@@ -222,9 +220,9 @@ func (db *DB) Transactions(ctx context.Context, f TxnFilter) ([]Txn, *Cursor, er
 	}
 	args = append(args, cAt, cAcct, cID, f.Limit+1)
 	rows, err := db.Pool.Query(ctx, `SELECT `+txnCols+txnFrom+txnWhere+`
-		  AND ($9::timestamptz IS NULL OR (`+txnSortAt+`, t.account_id, t.id) < ($9, $10, $11))
+		  AND ($8::timestamptz IS NULL OR (`+txnSortAt+`, t.account_id, t.id) < ($8, $9, $10))
 		ORDER BY 5 DESC, t.account_id DESC, t.id DESC
-		LIMIT $12`, args...)
+		LIMIT $11`, args...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("transactions: %w", err)
 	}

@@ -65,7 +65,6 @@ type txnPage struct {
 	rowsPage
 	Q, Account, From, To string // the filter as typed, echoed into the form
 	Category             string
-	Dir                  string // "in" or "out": only money in or out (from a Spending link)
 	Accounts             []Account
 	Count                int
 	Totals               []Total
@@ -81,10 +80,7 @@ func (s *Server) transactions(w http.ResponseWriter, r *http.Request) {
 	} else if id, ok := parseID(c); ok && id != nil {
 		p.Category = c
 	}
-	if d := q.Get("dir"); d == "in" || d == "out" {
-		p.Dir = d
-	}
-	f := TxnFilter{Query: p.Q, AccountID: p.Account, Category: p.Category, Dir: p.Dir, Limit: 50}
+	f := TxnFilter{Query: p.Q, AccountID: p.Account, Category: p.Category, Limit: 50}
 	from, to := q.Get("from"), q.Get("to")
 	fromDay, fromOK := s.parseDay(from)
 	toDay, toOK := s.parseDay(to)
@@ -106,7 +102,7 @@ func (s *Server) transactions(w http.ResponseWriter, r *http.Request) {
 		}
 		f.After = c
 	}
-	p.Filtered = p.Q != "" || p.Account != "" || p.From != "" || p.To != "" || p.Category != "" || p.Dir != ""
+	p.Filtered = p.Q != "" || p.Account != "" || p.From != "" || p.To != "" || p.Category != ""
 
 	txns, next, err := s.cfg.DB.Transactions(ctx, f)
 	if err != nil {
@@ -207,22 +203,19 @@ func (s *Server) spending(w http.ResponseWriter, r *http.Request) {
 		}
 		last := first.AddDate(0, 1, -1)
 		v := monthView{m, first.Format(time.DateOnly), last.Format(time.DateOnly)}
-		// Each row links to its transactions: that month, that category. The
-		// uncategorized rows split money in from money out, as the totals do.
-		link := func(l *Line, dir string) {
+		// Each row links to its transactions: that month, that category.
+		link := func(l *Line) {
 			q := url.Values{"from": {v.From}, "to": {v.To}, "category": {"none"}}
 			if l.CategoryID != nil {
 				q.Set("category", strconv.Itoa(int(*l.CategoryID)))
-			} else {
-				q.Set("dir", dir)
 			}
 			l.URL = "/transactions?" + q.Encode()
 		}
 		for i := range v.Categories {
-			link(&v.Categories[i], "out")
+			link(&v.Categories[i])
 		}
 		for i := range v.IncomeCategories {
-			link(&v.IncomeCategories[i], "in")
+			link(&v.IncomeCategories[i])
 		}
 		p.Months = append(p.Months, v)
 	}
