@@ -21,6 +21,10 @@ Single user (me). Security is the top priority; prefer fewer dependencies.
   `scripts/secrets-write.sh` writes each one to a file in a private dir (RAM locally);
   compose mounts them as file-backed secrets under /run/secrets, never env vars
   (env-sourced Compose secrets don't work with read_only services).
+- The droplet also hosts the hockey sites (codybrookshear/hockey, `/opt/hockey`: the rink
+  schedule and RHL stats): public, no Access, no secrets, their own Compose project and
+  networks (egress only, no route to finance). They share only the host and cloudflared,
+  whose config stays in this repo.
 - Images: built on the workstation from the committed HEAD (`git archive`) and copied over
   SSH by `scripts/deploy.sh`: no registry, and no registry token on the droplet.
   Postgres is the only pulled image (digest-pinned).
@@ -39,7 +43,9 @@ Single user (me). Security is the top priority; prefer fewer dependencies.
 - Postgres stays on the internal Docker network; only `sync` has egress. `web` is on the
   internal network only, so it can't publish a port: in production it listens on a Unix
   socket that cloudflared (host) connects to. compose.dev.yaml (dev only) adds a LAN port.
-- Every tunnel ingress rule (except the 404 catch-all) has `access: required: true`.
+- Every tunnel ingress rule has `access: required: true`, except the 404 catch-all and the
+  public hockey sites `hockey.` and `rhl.brookshear.party` (by choice; see below). No other
+  exceptions without the user's explicit decision.
 - Money is NUMERIC / string decimals, never float64.
 
 ## Status

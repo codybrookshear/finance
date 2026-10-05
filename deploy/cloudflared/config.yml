@@ -41,5 +41,15 @@ ingress:
         # Access app for finance.brookshear.party → Application Audience (AUD) tag
         audTag: [b377e7a1a9610f5cdcee7a0e963246fcc766318ca878d025f34aa117626aa53c]
 
+  # The hockey sites (codybrookshear/hockey), which share this droplet: the
+  # rink's schedule and the RHL league's stats, public data, so they're the
+  # only rules WITHOUT Cloudflare Access, by choice. Their containers have no
+  # secrets and no route to finance's containers (their own Compose project
+  # and networks); each serves its socket.
+  - hostname: hockey.brookshear.party
+    service: unix:/run/hockey-web/web.sock
+  - hostname: rhl.brookshear.party
+    service: unix:/run/rhl-web/web.sock
+
   # Anything else, including hostnames not listed above.
   - service: http_status:404
