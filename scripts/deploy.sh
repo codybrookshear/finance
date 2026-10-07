@@ -47,9 +47,10 @@ done <"$ENV_FILE"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 echo "Building images for $version..."
+# The droplet is x86-64; this builds for it from any workstation, an Apple Silicon Mac too.
 for cmd in migrate sync web; do
   git archive --format=tar HEAD |
-    docker build -q --build-arg CMD="$cmd" \
+    docker build -q --platform linux/amd64 --build-arg CMD="$cmd" \
       --label org.opencontainers.image.revision="$(git rev-parse HEAD)" \
       -t "finance-$cmd:$version" - >/dev/null
 done
