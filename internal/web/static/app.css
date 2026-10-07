@@ -284,6 +284,9 @@ details.month p { margin: 0; padding: 0.6rem 0.8rem; font-size: 0.9rem; }
 }
 .cats a.row:active, .accounts a.row:active { background: var(--line); }
 .cats meter { grid-column: 1 / -1; width: 100%; height: 0.4rem; margin-top: 0.45rem; }
+/* An account that links says so, across from its date. */
+.accounts a.row .meta { grid-column: 1; }
+.accounts .go { color: var(--accent); font-size: 0.8rem; font-weight: 600; text-align: right; white-space: nowrap; }
 
 /* Net worth: accounts grouped under their institution */
 .accounts > li.group {

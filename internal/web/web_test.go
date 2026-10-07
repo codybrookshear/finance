@@ -385,14 +385,65 @@ func TestPages(t *testing.T) {
 		if strings.Contains(b, "Closed") {
 			t.Error("hidden account shown")
 		}
-		// Each account opens its transactions; one with none isn't a link.
-		if !strings.Contains(b, `<a class="row" href="/transactions?account=chk">`) {
+		// Each account opens its transactions, and says so.
+		if !strings.Contains(b, `<a class="row" href="/transactions?account=chk">`) || !strings.Contains(b, "Transactions ›") {
 			t.Error("Checking doesn't link to its transactions")
 		}
-		if !strings.Contains(b, `<div class="row"><span class="what">Rainy day</span>`) || strings.Contains(b, "account=idle") {
-			t.Error("an account without transactions should not be a link")
+		if strings.Contains(b, "Rainy day") {
+			t.Error("an empty account with no transactions should be left out")
 		}
 	})
+}
+
+// Accounts with nothing but transfers aren't links; near-empty ones are left
+// out, yet still count toward their bank's total.
+func TestAccountRows(t *testing.T) {
+	db := seed(t)
+	ctx := context.Background()
+	owner, err := pgxpool.New(ctx, os.Getenv("TEST_OWNER_DATABASE_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Close()
+	exec := func(sql string) {
+		t.Helper()
+		if _, err := owner.Exec(ctx, sql); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+	exec(`INSERT INTO accounts (id, org_name, name, balance, balance_at) VALUES
+		('ira', 'Invest Co', 'IRA', 5000, now()),
+		('fund', 'Invest Co', 'Settlement fund', 3.00, now())`)
+	exec(`INSERT INTO transactions (account_id, id, posted_at, amount, description, is_transfer, category_id) VALUES
+		('ira', 'in', now(), 500.00, 'CONTRIBUTION', true, NULL),
+		('ira', 'cat', now(), 100.00, 'FROM CHECKING', false, (SELECT id FROM categories WHERE kind = 'transfer' LIMIT 1)),
+		('fund', 'in', now(), 3.00, 'SWEEP', true, NULL)`)
+	srv, err := New(Config{DB: db, DevEmail: "dev@example.com", Location: la, Log: quiet})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := srv.Handler()
+
+	b := page(t, h, "/accounts")
+	if !strings.Contains(b, `<div class="row"><span class="what">IRA</span>`) || strings.Contains(b, "account=ira") {
+		t.Error("an account with only transfers should not be a link")
+	}
+	if strings.Contains(b, "Settlement fund") {
+		t.Error("a $3 account with only transfers should be left out")
+	}
+	if !strings.Contains(b, "$5,003.00") {
+		t.Error("the bank's total should still count the account left out")
+	}
+	if strings.Contains(page(t, h, "/transactions"), `<option value="fund">`) {
+		t.Error("the account filter should leave it out too")
+	}
+
+	// Anything besides a transfer, even a cent of interest, brings it back as a link.
+	exec(`INSERT INTO transactions (account_id, id, posted_at, amount, description) VALUES
+		('fund', 'int', now(), 0.01, 'INTEREST')`)
+	if b := page(t, h, "/accounts"); !strings.Contains(b, `<a class="row" href="/transactions?account=fund">`) {
+		t.Error("an account with activity should be shown, as a link")
+	}
 }
 
 func TestEditing(t *testing.T) {
