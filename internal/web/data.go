@@ -24,7 +24,7 @@ type Account struct {
 	InNetWorth                       bool
 	OrgTotal                         string // the institution's accounts counted in net worth
 	AlsoUnder                        string // institutions whose duplicate copies were folded into this one
-	HasTxns                          bool   // false for balances kept by hand, and accounts with no activity
+	HasActivity                      bool   // has transactions other than transfers (so its list is worth opening)
 }
 
 // shownAccount is the SQL test for accounts the app shows (alias a).
@@ -145,23 +145,33 @@ type Line struct {
 
 type DB struct{ Pool *pgxpool.Pool }
 
+// Accounts lists the shown accounts, by institution. Near-empty accounts
+// with no activity (within $5 of zero, nothing but transfers) are left out,
+// but still count in their institution's total.
 func (db *DB) Accounts(ctx context.Context) ([]Account, error) {
 	rows, err := db.Pool.Query(ctx, `
+		WITH acct AS (
+			SELECT a.*,
+			       sum(a.balance) FILTER (WHERE a.include_in_net_worth) OVER (PARTITION BY a.org_name) AS org_total,
+			       EXISTS (SELECT 1 FROM transactions t LEFT JOIN categories c ON c.id = t.category_id
+			               WHERE t.account_id = a.id AND NOT t.is_transfer
+			                 AND coalesce(c.kind, '') <> 'transfer') AS has_activity
+			FROM accounts a WHERE `+shownAccount+`
+		)
 		SELECT a.id, coalesce(a.display_name, a.name), a.org_name, a.currency,
 		       round(a.balance, 2)::text, a.balance_at, a.include_in_net_worth,
-		       round(coalesce(sum(a.balance) FILTER (WHERE a.include_in_net_worth)
-		                      OVER (PARTITION BY a.org_name), 0), 2)::text,
+		       round(coalesce(a.org_total, 0), 2)::text,
 		       coalesce((SELECT string_agg(DISTINCT d.org_name, ', ') FROM accounts d
 		                 WHERE d.duplicate_of = a.id AND d.org_name <> a.org_name), ''),
-		       EXISTS (SELECT 1 FROM transactions t WHERE t.account_id = a.id)
-		FROM accounts a WHERE `+shownAccount+`
+		       a.has_activity
+		FROM acct a WHERE a.has_activity OR abs(a.balance) > 5
 		ORDER BY lower(a.org_name), a.include_in_net_worth DESC, lower(coalesce(a.display_name, a.name))`)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Account, error) {
 		var a Account
-		err := r.Scan(&a.ID, &a.Name, &a.Org, &a.Currency, &a.Balance, &a.BalanceAt, &a.InNetWorth, &a.OrgTotal, &a.AlsoUnder, &a.HasTxns)
+		err := r.Scan(&a.ID, &a.Name, &a.Org, &a.Currency, &a.Balance, &a.BalanceAt, &a.InNetWorth, &a.OrgTotal, &a.AlsoUnder, &a.HasActivity)
 		return a, err
 	})
 }
