@@ -43,6 +43,7 @@ type Txn struct {
 	Pending, Transfer                bool
 	OOB                              bool // view only: render as an htmx out-of-band swap
 	Open                             bool // view only: render with the details open
+	Dated                            bool // view only: show the date on the row (lists with no day headings)
 }
 
 // DOMID identifies the transaction's row in the page.
