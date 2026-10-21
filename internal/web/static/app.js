@@ -1,4 +1,4 @@
-// The app's only script (htmx aside): draws the net worth chart, keeps the
+// The app's only script (htmx aside): draws the Accounts chart, submits its picker, keeps the
 // transaction date filter a valid range, and makes iPhone's date "Reset" clear it.
 //
 // Chart data comes from data-* attributes (never inline script), as
@@ -12,9 +12,7 @@
     if (!el || el.dataset.drawn || typeof uPlot === "undefined") return;
     const days = el.dataset.days.split(",").map((d) => Date.parse(d + "T00:00:00Z") / 1000);
     const values = el.dataset.values.split(",").map(Number);
-    // With retirement counted there's a second line: "retirement + now".
-    const all = el.dataset.valuesAll ? el.dataset.valuesAll.split(",").map(Number) : null;
-    if (days.length < 2 || days.length !== values.length || (all && all.length !== days.length)) return;
+    if (days.length < 2 || days.length !== values.length) return;
     el.dataset.drawn = "1";
 
     const style = getComputedStyle(el);
@@ -36,14 +34,8 @@
         axis,
         Object.assign({}, axis, { size: 72, values: (u, splits) => splits.map((v) => money.format(v)) }),
       ],
-      series: [
-        {},
-        all
-          ? { label: "Now", stroke: muted, width: 2, dash: [6, 4], value: (u, v) => (v == null ? "" : money.format(v)) }
-          : { label: "Net worth", stroke: style.color, width: 2, value: (u, v) => (v == null ? "" : money.format(v)) },
-        ...(all ? [{ label: "With retirement", stroke: style.color, width: 2, value: (u, v) => (v == null ? "" : money.format(v)) }] : []),
-      ],
-    }, all ? [days, values, all] : [days, values], el);
+      series: [{}, { label: el.dataset.label || "Net worth", stroke: style.color, width: 2, value: (u, v) => (v == null ? "" : money.format(v)) }],
+    }, [days, values], el);
 
     new ResizeObserver(() => plot.setSize({ width: el.clientWidth, height: height() })).observe(el);
   }
@@ -90,6 +82,13 @@
     keep();
     document.addEventListener("htmx:afterSettle", keep);
     setTimeout(() => document.removeEventListener("htmx:afterSettle", keep), 3000);
+  });
+
+  // The Accounts chart picker applies as soon as you choose (the page is
+  // server-rendered; without script, the form has a button).
+  document.addEventListener("change", (e) => {
+    const el = e.target;
+    if (el instanceof HTMLSelectElement && el.dataset.autosubmit !== undefined && el.form) el.form.submit();
   });
 
   // Date filter. Each field remembers the value last searched for (data-sent).

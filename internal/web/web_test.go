@@ -220,6 +220,7 @@ func seed(t *testing.T) *DB {
 			('chk', $1, $2, now()), ('card', $1, -100, now()), ('old', $1, 5000, now()), ('k401', $1, 5000, now())`, day, 1000+i*100)
 	}
 	exec(`UPDATE accounts SET retirement = true WHERE id = 'k401'`)
+	exec(`UPDATE accounts SET kind = 'checking' WHERE id = 'chk'`)
 	exec(`INSERT INTO sync_runs (finished_at, status) VALUES (now(), 'ok')`)
 
 	pool, err := pgxpool.New(ctx, webURL)
@@ -400,15 +401,15 @@ func TestPages(t *testing.T) {
 			t.Errorf("old /networth: %d %s", res.StatusCode, res.Header.Get("Location"))
 		}
 		b := page("/accounts")
-		for _, want := range []string{"<h1>Accounts</h1>", `<span class="label">Net worth</span>`, `aria-current="page">Accounts</a>`} {
+		for _, want := range []string{"<h1>Accounts</h1>", `aria-current="page">Accounts</a>`} {
 			if !strings.Contains(b, want) {
 				t.Errorf("missing %q", want)
 			}
 		}
-		// Current: 1000.50 + (-250.25); the hidden account doesn't count.
-		for _, want := range []string{"$750.25", "Checking", "−$250.25", `id="networth-chart"`,
+		// Current: 1000.50 + (-250.25) + 5000.00 retirement; the hidden account doesn't count.
+		for _, want := range []string{"$5,750.25", "Checking", "−$250.25", `id="networth-chart"`,
 			`<li class="group">`, `<span class="what">Test Bank</span>`,
-			`data-values="900.00,1000.00,1100.00"`} {
+			`data-values="5900.00,6000.00,6100.00"`} {
 			if !strings.Contains(b, want) {
 				t.Errorf("missing %q", want)
 			}
@@ -424,17 +425,26 @@ func TestPages(t *testing.T) {
 			t.Error("an empty account with no transactions should be left out")
 		}
 
-		// Retirement accounts are left out of "now" money until switched on.
-		if strings.Contains(b, "$5,750.25") || !strings.Contains(b, `href="/accounts?retirement=1"`) ||
-			strings.Contains(b, "data-values-all") || !strings.Contains(b, "retirement, not counted") {
-			t.Error("retirement should be left out by default")
-		}
-		b = page("/accounts?retirement=1")
-		for _, want := range []string{"$5,750.25", `href="/accounts"`, `aria-checked="true"`,
-			`data-values="900.00,1000.00,1100.00"`, `data-values-all="5900.00,6000.00,6100.00"`} {
+		// The chart picker: total by default, or one kind of account.
+		for _, want := range []string{`<select name="show"`, `<option value="total" selected>Total assets</option>`,
+			`<option value="real_estate">Real estate</option>`, "retirement · "} {
 			if !strings.Contains(b, want) {
-				t.Errorf("with retirement: missing %q", want)
+				t.Errorf("missing %q", want)
 			}
+		}
+		b = page("/accounts?show=retirement")
+		for _, want := range []string{`<option value="retirement" selected>`, "$5,000.00",
+			`data-values="5000.00,5000.00,5000.00"`, `data-label="Retirement"`} {
+			if !strings.Contains(b, want) {
+				t.Errorf("retirement: missing %q", want)
+			}
+		}
+		b = page("/accounts?show=checking")
+		if !strings.Contains(b, `data-values="1000.00,1100.00,1200.00"`) || !strings.Contains(b, "$1,000.50") {
+			t.Error("checking chart")
+		}
+		if b := page("/accounts?show=junk"); !strings.Contains(b, `<option value="total" selected>`) {
+			t.Error("an unknown selection falls back to the total")
 		}
 	})
 }
@@ -724,8 +734,8 @@ func TestDuplicateAccounts(t *testing.T) {
 		t.Fatalf("marked %d (%v), want 1", n, err)
 	}
 	b := page(t, h, "/accounts")
-	// Counted once (5,000 + the seed's 750.25), listed once, under the first copy's bank.
-	for _, want := range []string{"$5,750.25", "also under Login B", "Login A"} {
+	// Counted once (5,000 + the seed's 5,750.25), listed once, under the first copy's bank.
+	for _, want := range []string{"$10,750.25", "also under Login B", "Login A"} {
 		if !strings.Contains(b, want) {
 			t.Errorf("missing %q", want)
 		}
