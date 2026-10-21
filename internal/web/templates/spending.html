@@ -1,29 +1,53 @@
 {{define "title"}}Spending{{end}}
 
+{{define "scripts"}}<script src="{{asset "vendor/htmx.min.js"}}"></script>{{end}}
+
 {{define "content" -}}
 <h1>Spending</h1>
-{{range $i, $m := .Months -}}
-<details class="month" data-month="{{.YearMonth}}"{{if eq $i 0}} open{{end}}>
-  <summary>
-    <span class="what">{{monthName .YearMonth}}</span>
-    <span class="amt{{if neg .Net}} out{{else}} in{{end}}" title="Net income">{{money .Net ""}}</span>
-    <span class="meta">income {{money .Income ""}} · spending {{money .Spent ""}}</span>
-  </summary>
-  <ul class="list cats">
-    {{- range .Categories}}
-    <li><a class="row" href="{{.URL}}">
+<nav class="monthnav" aria-label="Month">
+  {{if .Prev}}<a href="/spending?month={{.Prev}}" aria-label="Previous month" rel="prev">‹</a>{{else}}<span aria-hidden="true">‹</span>{{end}}
+  <h2>{{monthName .YearMonth}}</h2>
+  {{if .Next}}<a href="/spending?month={{.Next}}" aria-label="Next month" rel="next">›</a>{{else}}<span aria-hidden="true">›</span>{{end}}
+</nav>
+
+<section class="card tally">
+  {{- with .Forecast}}
+  <p class="label">Left this month</p>
+  <p class="big"><span class="amt{{if .LeftNeg}} out{{else}} in{{end}}">{{money .Left ""}}</span></p>
+  <meter class="left" min="0" max="{{.Expected}}" value="{{$.Month.Spent}}"></meter>
+  <p class="meta">spending {{money $.Month.Spent ""}} of {{if .Typical}}~{{end}}{{money .Expected ""}} income{{if .Typical}} expected (recent months' average; {{money $.Month.Income ""}} so far){{end}}</p>
+  {{- else}}
+  <p class="label">Net income</p>
+  <p class="big"><span class="amt{{if neg .Month.Net}} out{{else}} in{{end}}">{{money .Month.Net ""}}</span></p>
+  <p class="meta">income {{money .Month.Income ""}} · spending {{money .Month.Spent ""}}</p>
+  {{- end}}
+</section>
+
+{{if .HasData -}}
+<ul class="list cats">
+  {{- range .Cats}}
+  <li><details class="cat">
+    <summary hx-get="{{.URL}}" hx-trigger="click once" hx-target="next ul" hx-swap="innerHTML">
       <span class="what"><span class="chip sm{{if .CategoryID}} c-{{.CategoryID}}{{else}} none{{end}}" aria-hidden="true">{{if .Emoji}}{{.Emoji}}{{else}}?{{end}}</span> {{.Label}}</span>
-      <span class="amt">{{money .Amount ""}}</span>
-      <meter min="0" max="{{$m.Spent}}" value="{{.Amount}}"></meter>
-    </a></li>
-    {{- end}}
-    {{- range .IncomeCategories}}
-    <li class="income"><a class="row" href="{{.URL}}"><span class="what"><span class="chip sm{{if .CategoryID}} c-{{.CategoryID}}{{else}} none{{end}}" aria-hidden="true">{{if .Emoji}}{{.Emoji}}{{else}}?{{end}}</span> {{.Label}} (in)</span><span class="amt in">{{money .Amount ""}}</span></a></li>
-    {{- end}}
-  </ul>
-  <p><a href="/transactions?from={{.From}}&amp;to={{.To}}">Transactions in {{monthName .YearMonth}}</a></p>
-</details>
+      <span class="amt{{if .Over}} over{{end}}">{{money .Amount ""}}</span>
+      <span class="bar{{if .HasLast}} marked{{end}}"><meter min="0" max="{{.BarMax}}" low="{{if .HasLast}}{{.Last}}{{else}}0{{end}}" high="{{if .HasLast}}{{.Last}}{{else}}0{{end}}" optimum="0" value="{{.Amount}}"></meter></span>
+      {{- if .HasLast}}<span class="meta">last month {{money .Last ""}}</span>{{else}}<span class="meta">nothing last month</span>{{end}}
+    </summary>
+    <ul class="list txns" id="cat-{{$.YearMonth}}-{{if .CategoryID}}{{.CategoryID}}{{else}}none{{end}}"><li class="empty">Loading…</li></ul>
+  </details></li>
+  {{- end}}
+  {{- range .Income}}
+  <li><details class="cat income">
+    <summary hx-get="{{.URL}}" hx-trigger="click once" hx-target="next ul" hx-swap="innerHTML">
+      <span class="what"><span class="chip sm{{if .CategoryID}} c-{{.CategoryID}}{{else}} none{{end}}" aria-hidden="true">{{if .Emoji}}{{.Emoji}}{{else}}?{{end}}</span> {{.Label}} (in)</span>
+      <span class="amt in">{{money .Amount ""}}</span>
+    </summary>
+    <ul class="list txns" id="cat-{{$.YearMonth}}-in-{{if .CategoryID}}{{.CategoryID}}{{else}}none{{end}}"><li class="empty">Loading…</li></ul>
+  </details></li>
+  {{- end}}
+</ul>
+<p class="more-link"><a href="/transactions?from={{.From}}&amp;to={{.To}}">All transactions in {{monthName .YearMonth}}</a></p>
 {{else -}}
-<p class="empty">No posted transactions in the last 12 months.</p>
+<p class="empty">No posted transactions in {{monthName .YearMonth}}.</p>
 {{end}}
 {{- end}}

@@ -3,6 +3,7 @@ package web
 import (
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -127,7 +128,8 @@ func (s *Server) transactions(w http.ResponseWriter, r *http.Request) {
 
 	// htmx requests name the element they'll replace.
 	htmx := r.Header.Get("HX-Request") == "true"
-	if htmx && r.Header.Get("HX-Target") == "more" { // infinite scroll
+	// Infinite scroll targets #more; a Spending category opening targets its own list.
+	if target := r.Header.Get("HX-Target"); htmx && (target == "more" || strings.HasPrefix(target, "cat-")) {
 		s.render(w, r, "transactions", "rows", p.rowsPage)
 		return
 	}
@@ -143,7 +145,7 @@ func (s *Server) transactions(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	if p.Accounts, err = s.cfg.DB.Accounts(ctx); err != nil {
+	if p.Accounts, err = s.cfg.DB.Accounts(ctx, true); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -178,46 +180,108 @@ func (s *Server) groupByDay(txns []Txn, prevDay string) ([]txnRow, string) {
 	return rows, prevDay
 }
 
-type monthView struct {
-	Month
-	From, To string // the month's first and last day, for the transactions link
+// spendLine is a category's spending in the shown month, with what's needed
+// to draw its bar against last month: the bar is full at 10% over last
+// month's spending, so last month's amount sits at the 90% mark.
+type spendLine struct {
+	Line
+	Last    string // last month's spending in this category ("" if none)
+	BarMax  string // the amount that fills the bar
+	Over    bool   // spent more than last month
+	HasLast bool
 }
+
+// forecast is the current month's income outlook: income is expected to
+// match the recent months', so spending early in the month isn't "underwater".
+type forecast struct {
+	Expected string // expected income for the whole month (never less than what's arrived)
+	Left     string // Expected minus spending so far
+	LeftNeg  bool
+	Typical  bool // Expected is the recent average (not income already received)
+}
+
+type spendingPage struct {
+	base
+	YearMonth, Prev, Next string
+	From, To              string // the month's first and last day
+	Month                 Month
+	Cats                  []spendLine
+	Income                []Line
+	Forecast              *forecast
+	HasData               bool
+}
+
+// expectedIncomeMonths is how many recent full months the expected income
+// averages.
+const expectedIncomeMonths = 3
 
 func (s *Server) spending(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().In(s.cfg.Location)
-	since := time.Date(now.Year(), now.Month()-11, 1, 0, 0, 0, 0, s.cfg.Location)
+	thisMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, s.cfg.Location)
+	since := thisMonth.AddDate(-3, 0, 0)
 	months, err := s.cfg.DB.Spending(r.Context(), s.cfg.Location.String(), since)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	p := struct {
-		base
-		Months []monthView
-	}{}
+	byMonth := map[string]Month{}
+	oldest := thisMonth.Format("2006-01")
 	for _, m := range months {
-		first, err := time.Parse("2006-01", m.YearMonth)
-		if err != nil {
-			s.fail(w, r, err)
-			return
+		byMonth[m.YearMonth] = m
+		oldest = min(oldest, m.YearMonth) // YYYY-MM sorts as dates do
+	}
+
+	// The month shown: ?month=YYYY-MM, else this one; never a future month.
+	cur := thisMonth.Format("2006-01")
+	ym := cur
+	if t, err := time.Parse("2006-01", r.URL.Query().Get("month")); err == nil {
+		ym = min(max(t.Format("2006-01"), oldest), cur)
+	}
+	first, _ := time.ParseInLocation("2006-01", ym, s.cfg.Location)
+	p := spendingPage{
+		YearMonth: ym,
+		From:      first.Format(time.DateOnly),
+		To:        first.AddDate(0, 1, -1).Format(time.DateOnly),
+	}
+	if ym > oldest {
+		p.Prev = first.AddDate(0, -1, 0).Format("2006-01")
+	}
+	if ym < cur {
+		p.Next = first.AddDate(0, 1, 0).Format("2006-01")
+	}
+	m, ok := byMonth[ym]
+	if !ok {
+		m = Month{YearMonth: ym, Spent: "0.00", Income: "0.00", Net: "0.00"}
+	}
+	p.Month, p.HasData = m, ok
+
+	// Each category row compares with the same category last month.
+	last := map[string]string{} // by label
+	for _, l := range byMonth[first.AddDate(0, -1, 0).Format("2006-01")].Categories {
+		last[l.Label] = l.Amount
+	}
+	for _, l := range m.Categories {
+		l.URL = s.categoryURL(p.From, p.To, l.CategoryID)
+		sl := spendLine{Line: l}
+		spent, _ := toCents(l.Amount)
+		if lc, ok := toCents(last[l.Label]); ok && lc > 0 {
+			sl.HasLast, sl.Last = true, last[l.Label]
+			sl.BarMax = fromCents(lc * 11 / 10)
+			sl.Over = spent > lc
+		} else {
+			sl.BarMax, sl.Over = l.Amount, spent > 0 // new this month: full, no baseline
 		}
-		last := first.AddDate(0, 1, -1)
-		v := monthView{m, first.Format(time.DateOnly), last.Format(time.DateOnly)}
-		// Each row links to its transactions: that month, that category.
-		link := func(l *Line) {
-			q := url.Values{"from": {v.From}, "to": {v.To}, "category": {"none"}}
-			if l.CategoryID != nil {
-				q.Set("category", strconv.Itoa(int(*l.CategoryID)))
-			}
-			l.URL = "/transactions?" + q.Encode()
+		if c, _ := toCents(sl.BarMax); c <= 0 {
+			sl.BarMax = "1.00"
 		}
-		for i := range v.Categories {
-			link(&v.Categories[i])
-		}
-		for i := range v.IncomeCategories {
-			link(&v.IncomeCategories[i])
-		}
-		p.Months = append(p.Months, v)
+		p.Cats = append(p.Cats, sl)
+	}
+	for _, l := range m.IncomeCategories {
+		l.URL = s.categoryURL(p.From, p.To, l.CategoryID)
+		p.Income = append(p.Income, l)
+	}
+	if ym == cur {
+		p.Forecast = forecastFor(byMonth, cur, m)
 	}
 	if p.base, err = s.base(r, "spending"); err != nil {
 		s.fail(w, r, err)
@@ -226,20 +290,63 @@ func (s *Server) spending(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "spending", "layout.html", p)
 }
 
+// categoryURL is the month's transactions in one category (nil = none).
+func (s *Server) categoryURL(from, to string, id *int32) string {
+	q := url.Values{"from": {from}, "to": {to}, "category": {"none"}}
+	if id != nil {
+		q.Set("category", strconv.Itoa(int(*id)))
+	}
+	return "/transactions?" + q.Encode()
+}
+
+// forecastFor expects this month's income to match the average of the last
+// few full months with income, or what has already arrived if that's more.
+// It returns nil when there's no history to go on.
+func forecastFor(byMonth map[string]Month, cur string, m Month) *forecast {
+	var yms []string
+	for ym, o := range byMonth {
+		if c, _ := toCents(o.Income); ym < cur && c > 0 {
+			yms = append(yms, ym)
+		}
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(yms)))
+	if len(yms) > expectedIncomeMonths {
+		yms = yms[:expectedIncomeMonths]
+	}
+	if len(yms) == 0 {
+		return nil
+	}
+	var sum int64
+	for _, ym := range yms {
+		c, _ := toCents(byMonth[ym].Income)
+		sum += c
+	}
+	expected, typical := sum/int64(len(yms)), true
+	got, _ := toCents(m.Income)
+	if got > expected {
+		expected, typical = got, false
+	}
+	spent, _ := toCents(m.Spent)
+	return &forecast{Expected: fromCents(expected), Left: fromCents(expected - spent),
+		LeftNeg: expected < spent, Typical: typical}
+}
+
 func (s *Server) accounts(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	p := struct {
 		base
+		Retirement             bool // retirement accounts are counted
 		Totals                 []Total
 		Accounts               []Account
 		ChartDays, ChartValues string // comma-separated, for app.js
-	}{}
+		ChartAll               string // with retirement (set only when counted)
+	}{Retirement: r.URL.Query().Get("retirement") == "1"}
 	var err error
-	if p.Totals, err = s.cfg.DB.NetWorthNow(ctx); err != nil {
+	if p.Totals, err = s.cfg.DB.NetWorthNow(ctx, p.Retirement); err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	if p.Accounts, err = s.cfg.DB.Accounts(ctx); err != nil {
+	if p.Accounts, err = s.cfg.DB.Accounts(ctx, p.Retirement); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -250,11 +357,14 @@ func (s *Server) accounts(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(points) >= 2 {
 		days := make([]string, len(points))
-		vals := make([]string, len(points))
+		now, all := make([]string, len(points)), make([]string, len(points))
 		for i, pt := range points {
-			days[i], vals[i] = pt.Day.Format(time.DateOnly), pt.Value
+			days[i], now[i], all[i] = pt.Day.Format(time.DateOnly), pt.Now, pt.All
 		}
-		p.ChartDays, p.ChartValues = strings.Join(days, ","), strings.Join(vals, ",")
+		p.ChartDays, p.ChartValues = strings.Join(days, ","), strings.Join(now, ",")
+		if p.Retirement {
+			p.ChartAll = strings.Join(all, ",")
+		}
 	}
 	if p.base, err = s.base(r, "accounts"); err != nil {
 		s.fail(w, r, err)

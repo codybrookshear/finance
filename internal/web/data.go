@@ -21,7 +21,8 @@ import (
 type Account struct {
 	ID, Name, Org, Currency, Balance string
 	BalanceAt                        *time.Time
-	InNetWorth                       bool
+	InNetWorth                       bool // counted in the net worth shown (not hidden from it, and not retirement while that's left out)
+	Retirement                       bool
 	OrgTotal                         string // the institution's accounts counted in net worth
 	AlsoUnder                        string // institutions whose duplicate copies were folded into this one
 	HasActivity                      bool   // has transactions other than transfers (so its list is worth opening)
@@ -145,33 +146,38 @@ type Line struct {
 
 type DB struct{ Pool *pgxpool.Pool }
 
+// counted is the SQL test for accounts that count in the net worth shown
+// (alias a): those marked to count, leaving out retirement accounts unless
+// $1 (include retirement) is true.
+const counted = `a.include_in_net_worth AND ($1 OR NOT a.retirement)`
+
 // Accounts lists the shown accounts, by institution. Near-empty accounts
 // with no activity (within $5 of zero, nothing but transfers) are left out,
 // but still count in their institution's total.
-func (db *DB) Accounts(ctx context.Context) ([]Account, error) {
+func (db *DB) Accounts(ctx context.Context, retirement bool) ([]Account, error) {
 	rows, err := db.Pool.Query(ctx, `
 		WITH acct AS (
 			SELECT a.*,
-			       sum(a.balance) FILTER (WHERE a.include_in_net_worth) OVER (PARTITION BY a.org_name) AS org_total,
+			       sum(a.balance) FILTER (WHERE `+counted+`) OVER (PARTITION BY a.org_name) AS org_total,
 			       EXISTS (SELECT 1 FROM transactions t LEFT JOIN categories c ON c.id = t.category_id
 			               WHERE t.account_id = a.id AND NOT t.is_transfer
 			                 AND coalesce(c.kind, '') <> 'transfer') AS has_activity
 			FROM accounts a WHERE `+shownAccount+`
 		)
 		SELECT a.id, coalesce(a.display_name, a.name), a.org_name, a.currency,
-		       round(a.balance, 2)::text, a.balance_at, a.include_in_net_worth,
+		       round(a.balance, 2)::text, a.balance_at, `+counted+`, a.retirement,
 		       round(coalesce(a.org_total, 0), 2)::text,
 		       coalesce((SELECT string_agg(DISTINCT d.org_name, ', ') FROM accounts d
 		                 WHERE d.duplicate_of = a.id AND d.org_name <> a.org_name), ''),
 		       a.has_activity
 		FROM acct a WHERE a.has_activity OR abs(a.balance) > 5
-		ORDER BY lower(a.org_name), a.include_in_net_worth DESC, lower(coalesce(a.display_name, a.name))`)
+		ORDER BY lower(a.org_name), `+counted+` DESC, lower(coalesce(a.display_name, a.name))`, retirement)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Account, error) {
 		var a Account
-		err := r.Scan(&a.ID, &a.Name, &a.Org, &a.Currency, &a.Balance, &a.BalanceAt, &a.InNetWorth, &a.OrgTotal, &a.AlsoUnder, &a.HasActivity)
+		err := r.Scan(&a.ID, &a.Name, &a.Org, &a.Currency, &a.Balance, &a.BalanceAt, &a.InNetWorth, &a.Retirement, &a.OrgTotal, &a.AlsoUnder, &a.HasActivity)
 		return a, err
 	})
 }
@@ -380,22 +386,26 @@ func (db *DB) Spending(ctx context.Context, tz string, since time.Time) ([]Month
 	return months, rows.Err()
 }
 
-// Point is one day of net worth.
+// Point is one day of net worth: Now leaves retirement accounts out, All
+// counts them.
 type Point struct {
-	Day   time.Time
-	Value string
+	Day      time.Time
+	Now, All string
 }
 
 // NetWorth is the daily sum of balance snapshots across accounts counted in
-// net worth. Days without a snapshot carry the account's last known balance.
+// net worth, with and without retirement accounts. Days without a snapshot
+// carry the account's last known balance.
 func (db *DB) NetWorth(ctx context.Context) ([]Point, error) {
 	rows, err := db.Pool.Query(ctx, `
-		WITH acct AS (SELECT a.id FROM accounts a WHERE a.include_in_net_worth AND `+shownAccount+`),
+		WITH acct AS (SELECT a.id, a.retirement FROM accounts a WHERE a.include_in_net_worth AND `+shownAccount+`),
 		days AS (
 			SELECT generate_series(min(as_of), max(as_of), interval '1 day')::date AS d
 			FROM balance_snapshots WHERE account_id IN (SELECT id FROM acct)
 		)
-		SELECT days.d, round(sum(s.balance), 2)::text
+		SELECT days.d,
+		       round(coalesce(sum(s.balance) FILTER (WHERE NOT acct.retirement), 0), 2)::text,
+		       round(sum(s.balance), 2)::text
 		FROM days CROSS JOIN acct
 		JOIN LATERAL (
 			SELECT balance FROM balance_snapshots b
@@ -408,17 +418,18 @@ func (db *DB) NetWorth(ctx context.Context) ([]Point, error) {
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Point, error) {
 		var p Point
-		err := r.Scan(&p.Day, &p.Value)
+		err := r.Scan(&p.Day, &p.Now, &p.All)
 		return p, err
 	})
 }
 
-// NetWorthNow totals current balances of accounts counted in net worth.
-func (db *DB) NetWorthNow(ctx context.Context) ([]Total, error) {
+// NetWorthNow totals current balances of accounts counted in net worth,
+// with retirement accounts only if asked.
+func (db *DB) NetWorthNow(ctx context.Context, retirement bool) ([]Total, error) {
 	rows, err := db.Pool.Query(ctx, `
 		SELECT a.currency, round(sum(a.balance), 2)::text FROM accounts a
-		WHERE a.include_in_net_worth AND `+shownAccount+`
-		GROUP BY a.currency ORDER BY a.currency`)
+		WHERE `+counted+` AND `+shownAccount+`
+		GROUP BY a.currency ORDER BY a.currency`, retirement)
 	if err != nil {
 		return nil, fmt.Errorf("net worth: %w", err)
 	}
