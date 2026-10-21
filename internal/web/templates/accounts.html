@@ -6,17 +6,20 @@
 
 {{define "content" -}}
 <h1>Accounts</h1>
-<div class="toggle">
-  <span class="label">Net worth</span>
-  <a class="switch{{if .Retirement}} on{{end}}" role="switch" aria-checked="{{.Retirement}}"
-     href="/accounts{{if not .Retirement}}?retirement=1{{end}}">Include retirement</a>
-</div>
+<form class="chartpick" action="/accounts" method="get">
+  <select name="show" aria-label="Show" data-autosubmit>
+    {{- range .Groups}}
+    <option value="{{.Key}}"{{if eq .Key $.Group}} selected{{end}}>{{.Label}}</option>
+    {{- end}}
+  </select>
+  <noscript><button type="submit">Show</button></noscript>
+</form>
 <p class="big">{{range .Totals}}<span class="amt{{if neg .Amount}} out{{end}}">{{money .Amount .Currency}}</span> {{else}}—{{end}}</p>
 {{if .ChartDays -}}
-<div id="networth-chart" class="chart" data-days="{{.ChartDays}}" data-values="{{.ChartValues}}"{{if .ChartAll}} data-values-all="{{.ChartAll}}"{{end}}
-     role="img" aria-label="Net worth over time"></div>
+<div id="networth-chart" class="chart" data-days="{{.ChartDays}}" data-values="{{.ChartValues}}" data-label="{{.GroupLabel}}"
+     role="img" aria-label="{{.GroupLabel}} over time"></div>
 {{- else -}}
-<p class="note">The chart builds up one day per sync, starting with the first. Check back tomorrow.</p>
+<p class="note">Nothing to chart here yet. The chart builds up one day per sync, starting with the first.</p>
 {{- end}}
 <ul class="list accounts">
   {{- $org := "\x00"}}
@@ -40,6 +43,6 @@
 {{define "account" -}}
 <span class="what">{{.Name}}</span>
 <span class="amt{{if neg .Balance}} out{{end}}">{{money .Balance .Currency}}</span>
-<span class="meta">{{if .AlsoUnder}}also under {{.AlsoUnder}} · {{end}}{{if not .InNetWorth}}{{if .Retirement}}retirement, not counted{{else}}not in net worth{{end}} · {{else if .Retirement}}retirement · {{end}}as of {{stamp .BalanceAt}}</span>
+<span class="meta">{{if .AlsoUnder}}also under {{.AlsoUnder}} · {{end}}{{if not .InNetWorth}}not in net worth · {{end}}{{if .Retirement}}retirement · {{end}}as of {{stamp .BalanceAt}}</span>
 {{- if .HasActivity}}<span class="go">Transactions ›</span>{{end}}
 {{- end}}

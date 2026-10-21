@@ -145,7 +145,7 @@ func (s *Server) transactions(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	if p.Accounts, err = s.cfg.DB.Accounts(ctx, true); err != nil {
+	if p.Accounts, err = s.cfg.DB.Accounts(ctx); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -335,36 +335,41 @@ func (s *Server) accounts(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	p := struct {
 		base
-		Retirement             bool // retirement accounts are counted
+		Group, GroupLabel      string // what the headline and chart show
+		Groups                 []struct{ Key, Label string }
 		Totals                 []Total
 		Accounts               []Account
 		ChartDays, ChartValues string // comma-separated, for app.js
-		ChartAll               string // with retirement (set only when counted)
-	}{Retirement: r.URL.Query().Get("retirement") == "1"}
+	}{Group: "total", Groups: ChartGroups}
+	for _, g := range ChartGroups {
+		if g.Key == r.URL.Query().Get("show") {
+			p.Group = g.Key
+		}
+		if g.Key == p.Group {
+			p.GroupLabel = g.Label
+		}
+	}
 	var err error
-	if p.Totals, err = s.cfg.DB.NetWorthNow(ctx, p.Retirement); err != nil {
+	if p.Totals, err = s.cfg.DB.NetWorthNow(ctx, p.Group); err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	if p.Accounts, err = s.cfg.DB.Accounts(ctx, p.Retirement); err != nil {
+	if p.Accounts, err = s.cfg.DB.Accounts(ctx); err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	points, err := s.cfg.DB.NetWorth(ctx)
+	points, err := s.cfg.DB.NetWorth(ctx, p.Group)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	if len(points) >= 2 {
 		days := make([]string, len(points))
-		now, all := make([]string, len(points)), make([]string, len(points))
+		vals := make([]string, len(points))
 		for i, pt := range points {
-			days[i], now[i], all[i] = pt.Day.Format(time.DateOnly), pt.Now, pt.All
+			days[i], vals[i] = pt.Day.Format(time.DateOnly), pt.Value
 		}
-		p.ChartDays, p.ChartValues = strings.Join(days, ","), strings.Join(now, ",")
-		if p.Retirement {
-			p.ChartAll = strings.Join(all, ",")
-		}
+		p.ChartDays, p.ChartValues = strings.Join(days, ","), strings.Join(vals, ",")
 	}
 	if p.base, err = s.base(r, "accounts"); err != nil {
 		s.fail(w, r, err)
