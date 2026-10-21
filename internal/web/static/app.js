@@ -1,6 +1,5 @@
 // The app's only script (htmx aside): draws the net worth chart, keeps the
-// transaction date filter a valid range, makes iPhone's date "Reset" clear it,
-// and has the Spending page remember which months were open and where you were.
+// transaction date filter a valid range, and makes iPhone's date "Reset" clear it.
 //
 // Chart data comes from data-* attributes (never inline script), as
 // comma-separated days (YYYY-MM-DD) and decimal strings. Converting to Number
@@ -13,7 +12,9 @@
     if (!el || el.dataset.drawn || typeof uPlot === "undefined") return;
     const days = el.dataset.days.split(",").map((d) => Date.parse(d + "T00:00:00Z") / 1000);
     const values = el.dataset.values.split(",").map(Number);
-    if (days.length < 2 || days.length !== values.length) return;
+    // With retirement counted there's a second line: "retirement + now".
+    const all = el.dataset.valuesAll ? el.dataset.valuesAll.split(",").map(Number) : null;
+    if (days.length < 2 || days.length !== values.length || (all && all.length !== days.length)) return;
     el.dataset.drawn = "1";
 
     const style = getComputedStyle(el);
@@ -35,42 +36,19 @@
         axis,
         Object.assign({}, axis, { size: 72, values: (u, splits) => splits.map((v) => money.format(v)) }),
       ],
-      series: [{}, { label: "Net worth", stroke: style.color, width: 2, value: (u, v) => (v == null ? "" : money.format(v)) }],
-    }, [days, values], el);
+      series: [
+        {},
+        all
+          ? { label: "Now", stroke: muted, width: 2, dash: [6, 4], value: (u, v) => (v == null ? "" : money.format(v)) }
+          : { label: "Net worth", stroke: style.color, width: 2, value: (u, v) => (v == null ? "" : money.format(v)) },
+        ...(all ? [{ label: "With retirement", stroke: style.color, width: 2, value: (u, v) => (v == null ? "" : money.format(v)) }] : []),
+      ],
+    }, all ? [days, values, all] : [days, values], el);
 
     new ResizeObserver(() => plot.setSize({ width: el.clientWidth, height: height() })).observe(el);
   }
 
   document.addEventListener("DOMContentLoaded", drawNetWorth);
-
-  // Spending: remember the open months and the scroll position, so going to a
-  // category's transactions and back (or to another tab and back) puts you
-  // where you were. Pages are no-store, so the browser reloads rather than
-  // restoring them. sessionStorage: this tab only, gone when it closes; may
-  // be unavailable, and then the page just opens as usual.
-  document.addEventListener("DOMContentLoaded", () => {
-    const months = Array.from(document.querySelectorAll("details.month[data-month]"));
-    if (months.length === 0) return;
-    const key = "spending-view";
-    let saved = null;
-    try { saved = JSON.parse(sessionStorage.getItem(key) || "null"); } catch (e) { /* unavailable */ }
-    if (saved && Array.isArray(saved.open)) {
-      if ("scrollRestoration" in history) history.scrollRestoration = "manual";
-      for (const d of months) d.open = saved.open.includes(d.dataset.month);
-      window.scrollTo(0, Number(saved.y) || 0);
-    }
-    const save = () => {
-      try {
-        sessionStorage.setItem(key, JSON.stringify({
-          open: months.filter((d) => d.open).map((d) => d.dataset.month),
-          y: Math.round(window.scrollY),
-        }));
-      } catch (e) { /* unavailable */ }
-    };
-    for (const d of months) d.addEventListener("toggle", save);
-    document.addEventListener("click", (e) => { if (e.target.closest("a")) save(); }, true);
-    window.addEventListener("pagehide", save);
-  });
 
   // Date filter. Each field remembers the value last searched for (data-sent).
   //

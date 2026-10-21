@@ -15,10 +15,13 @@ with a phone-friendly web UI behind Cloudflare Access.
 - **Transactions:** search by name, note or amount; filter by account, category
   and dates. Tap a category chip to change it; similar transactions follow,
   favoring your most recent choices. Rename a transaction by giving it a note.
-- **Spending:** net income per month, broken down by category; each row opens
-  that month's transactions.
+- **Spending:** one month at a time (arrows to move between months), by
+  category, each bar measured against the same category last month (full at 10%
+  over, red tick at last month's level); tap a category to see and recategorize
+  its transactions. The current month shows what's left against expected income.
 - **Accounts:** net worth, its history, and balances by institution, including
-  balances you keep by hand (like your home's value).
+  balances you keep by hand (like your home's value). A switch counts retirement
+  accounts in the total and chart or leaves them out.
 - **Sync:** every 3 hours from SimpleFIN, with history backfill, pending
   transactions, transfer detection between your own accounts, and joint
   accounts reported by two logins shown once.

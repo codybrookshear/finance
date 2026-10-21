@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -45,4 +46,30 @@ func formatMoney(amount, currency string) string {
 func isNegative(amount string) bool {
 	m := decimalRE.FindStringSubmatch(amount)
 	return m != nil && m[1] == "-" && strings.Trim(m[2]+m[3], "0") != ""
+}
+
+// toCents reads a plain decimal ("12.5", "-3.07") as whole cents, for
+// proportions (bar lengths, forecasts). Exact: integers only, no float64.
+func toCents(amount string) (int64, bool) {
+	m := decimalRE.FindStringSubmatch(amount)
+	if m == nil || len(m[2]) > 15 {
+		return 0, false
+	}
+	var n int64
+	for _, c := range m[2] + m[3] + strings.Repeat("0", 2-len(m[3])) {
+		n = n*10 + int64(c-'0')
+	}
+	if m[1] == "-" {
+		n = -n
+	}
+	return n, true
+}
+
+// fromCents is toCents' inverse: 1234 is "12.34".
+func fromCents(n int64) string {
+	sign := ""
+	if n < 0 {
+		sign, n = "-", -n
+	}
+	return fmt.Sprintf("%s%d.%02d", sign, n/100, n%100)
 }

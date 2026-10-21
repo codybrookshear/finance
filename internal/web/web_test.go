@@ -195,7 +195,8 @@ func seed(t *testing.T) *DB {
 		('chk', 'Test Bank', 'CHECKING 1234', 'Checking', 1000.50, now(), false, true),
 		('card', 'Test Bank', 'VISA 9876', NULL, -250.25, now(), false, true),
 		('idle', 'Test Bank', 'SAVINGS 5555', 'Rainy day', 0, now(), false, true),
-		('old', 'Old Bank', 'Closed', NULL, 999, now(), true, true)`)
+		('old', 'Old Bank', 'Closed', NULL, 999, now(), true, true),
+		('k401', 'Employer plan', 'Retirement 401(k)', NULL, 5000, now(), false, true)`)
 
 	now := time.Now().In(la)
 	lastMonth := time.Date(now.Year(), now.Month()-1, 10, 12, 0, 0, 0, la)
@@ -216,8 +217,9 @@ func seed(t *testing.T) *DB {
 	for i, d := range []int{3, 2, 1} {
 		day := now.AddDate(0, 0, -d).Format(time.DateOnly)
 		exec(`INSERT INTO balance_snapshots (account_id, as_of, balance, balance_at) VALUES
-			('chk', $1, $2, now()), ('card', $1, -100, now()), ('old', $1, 5000, now())`, day, 1000+i*100)
+			('chk', $1, $2, now()), ('card', $1, -100, now()), ('old', $1, 5000, now()), ('k401', $1, 5000, now())`, day, 1000+i*100)
 	}
+	exec(`UPDATE accounts SET retirement = true WHERE id = 'k401'`)
 	exec(`INSERT INTO sync_runs (finished_at, status) VALUES (now(), 'ok')`)
 
 	pool, err := pgxpool.New(ctx, webURL)
@@ -332,25 +334,37 @@ func TestPages(t *testing.T) {
 	})
 
 	t.Run("spending", func(t *testing.T) {
-		b := page("/spending")
 		lm := time.Now().In(la).AddDate(0, -1, 0)
+		b := page("/spending?month=" + lm.Format("2006-01"))
 		// Last month: income 2,000.00; spending 10 coffees (45.00) + 12.34 + 1.00.
 		for _, want := range []string{lm.Format("January 2006"), "Groceries", "$12.34", "Uncategorized",
-			"income $2,000.00", "spending $58.34", "$1,941.66"} {
+			"income $2,000.00", "spending $58.34", "$1,941.66", "nothing last month"} {
 			if !strings.Contains(b, want) {
 				t.Errorf("missing %q in:\n%s", want, regexp.MustCompile(`(?s)<main>.*</main>`).FindString(b))
 				break
 			}
 		}
-		// Rows link to that month's transactions in that category.
-		groceries := regexp.MustCompile(`href="(/transactions\?category=\d+&amp;from=[0-9-]+&amp;to=[0-9-]+)"`).FindStringSubmatch(b)
+		// One month at a time, with arrows (the coffees go back before this month).
+		if !strings.Contains(b, `rel="prev"`) || !strings.Contains(b, `rel="next"`) {
+			t.Error("month arrows")
+		}
+		if strings.Contains(b, "Left this month") {
+			t.Error("a past month shows its net, not a forecast")
+		}
+		// Rows open the month's transactions in that category, in place.
+		groceries := regexp.MustCompile(`hx-get="(/transactions\?category=\d+&amp;from=[0-9-]+&amp;to=[0-9-]+)"`).FindStringSubmatch(b)
 		if groceries == nil {
 			t.Fatal("no category link")
 		}
-		if b := page(strings.ReplaceAll(groceries[1], "&amp;", "&")); !strings.Contains(b, "1 transaction ") || !strings.Contains(b, "Grocer") {
+		url := strings.ReplaceAll(groceries[1], "&amp;", "&")
+		if b := page(url); !strings.Contains(b, "1 transaction ") || !strings.Contains(b, "Grocer") {
 			t.Error("category link")
 		}
-		none := regexp.MustCompile(`href="(/transactions\?category=none&amp;from=[0-9-]+&amp;to=[0-9-]+)"`).FindStringSubmatch(b)
+		rows := page(url, "HX-Request", "true", "HX-Target", "cat-"+lm.Format("2006-01")+"-1")
+		if strings.Contains(rows, "<html") || !strings.Contains(rows, "Grocery store") || !strings.Contains(rows, `hx-post="/transactions/category"`) {
+			t.Errorf("expanded rows should be a bare list of rows with category pickers:\n%s", rows)
+		}
+		none := regexp.MustCompile(`hx-get="(/transactions\?category=none&amp;from=[0-9-]+&amp;to=[0-9-]+)"`).FindStringSubmatch(b)
 		if none == nil {
 			t.Fatal("no uncategorized link")
 		}
@@ -362,6 +376,23 @@ func TestPages(t *testing.T) {
 				t.Errorf("should not count %q", bad)
 			}
 		}
+
+		// This month has nothing posted yet, but income is expected to match
+		// last month's, so nothing is "underwater".
+		b = page("/spending")
+		for _, want := range []string{"Left this month", "$2,000.00", "~$2,000.00 income expected", `rel="prev"`} {
+			if !strings.Contains(b, want) {
+				t.Errorf("this month: missing %q", want)
+			}
+		}
+		if strings.Contains(b, `rel="next"`) {
+			t.Error("no month after this one")
+		}
+		for _, q := range []string{"?month=2999-01", "?month=1999-01", "?month=junk"} {
+			if res := get(t, h, "/spending"+q); res.StatusCode != http.StatusOK {
+				t.Errorf("/spending%s: %d", q, res.StatusCode)
+			}
+		}
 	})
 
 	t.Run("accounts", func(t *testing.T) {
@@ -369,7 +400,7 @@ func TestPages(t *testing.T) {
 			t.Errorf("old /networth: %d %s", res.StatusCode, res.Header.Get("Location"))
 		}
 		b := page("/accounts")
-		for _, want := range []string{"<h1>Accounts</h1>", `<p class="label">Net worth</p>`, `aria-current="page">Accounts</a>`} {
+		for _, want := range []string{"<h1>Accounts</h1>", `<span class="label">Net worth</span>`, `aria-current="page">Accounts</a>`} {
 			if !strings.Contains(b, want) {
 				t.Errorf("missing %q", want)
 			}
@@ -391,6 +422,19 @@ func TestPages(t *testing.T) {
 		}
 		if strings.Contains(b, "Rainy day") {
 			t.Error("an empty account with no transactions should be left out")
+		}
+
+		// Retirement accounts are left out of "now" money until switched on.
+		if strings.Contains(b, "$5,750.25") || !strings.Contains(b, `href="/accounts?retirement=1"`) ||
+			strings.Contains(b, "data-values-all") || !strings.Contains(b, "retirement, not counted") {
+			t.Error("retirement should be left out by default")
+		}
+		b = page("/accounts?retirement=1")
+		for _, want := range []string{"$5,750.25", `href="/accounts"`, `aria-checked="true"`,
+			`data-values="900.00,1000.00,1100.00"`, `data-values-all="5900.00,6000.00,6100.00"`} {
+			if !strings.Contains(b, want) {
+				t.Errorf("with retirement: missing %q", want)
+			}
 		}
 	})
 }
