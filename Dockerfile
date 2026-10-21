@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Pinned to digests; Dependabot keeps them current.
-ARG GO_IMAGE=golang:1.27-trixie@sha256:3b77fc618ec235a1ab412de7737f120dd507c57e8d87de4cbb7994fb94275ed5
+ARG GO_IMAGE=golang:1.27-trixie@sha256:1896654cfc5c2b5ad74c07f29cb36f5d2d1cbed42e3054070fbfe444e521e83c
 ARG RUNTIME_IMAGE=gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3
 
 FROM ${GO_IMAGE} AS build
