@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -80,6 +81,29 @@ func (db *DB) SetNote(ctx context.Context, accountID, id, note string) error {
 		if err == nil && tag.RowsAffected() != 1 {
 			err = ErrNotFound
 		}
+		return err
+	})
+}
+
+// ExpectedIncome is the monthly income set by hand (nil if not set).
+func (db *DB) ExpectedIncome(ctx context.Context) (*string, error) {
+	var amount *string
+	err := db.Pool.QueryRow(ctx, `SELECT round(amount, 2)::text FROM expected_income`).Scan(&amount)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return amount, err
+}
+
+// SetExpectedIncome sets the expected monthly income (nil clears it).
+func (db *DB) SetExpectedIncome(ctx context.Context, amount *string) error {
+	return db.edit(ctx, func(tx pgx.Tx) error {
+		if amount == nil {
+			_, err := tx.Exec(ctx, `DELETE FROM expected_income`)
+			return err
+		}
+		_, err := tx.Exec(ctx, `INSERT INTO expected_income (id, amount) VALUES (1, $1::numeric)
+			ON CONFLICT (id) DO UPDATE SET amount = EXCLUDED.amount`, *amount)
 		return err
 	})
 }
@@ -195,4 +219,32 @@ func (s *Server) setNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.render(w, r, "transactions", "rows", p)
+}
+
+var incomeRE = regexp.MustCompile(`^\$?(\d{1,9}(?:\.\d{1,2})?)$`)
+
+// setExpectedIncome saves the expected monthly income typed on the Spending
+// page ("" puts it back to last month's income), then returns to that month.
+func (s *Server) setExpectedIncome(w http.ResponseWriter, r *http.Request) {
+	if !s.parseForm(w, r) {
+		return
+	}
+	var amount *string
+	if v := strings.ReplaceAll(strings.TrimSpace(r.PostForm.Get("amount")), ",", ""); v != "" && r.PostForm.Get("reset") == "" {
+		m := incomeRE.FindStringSubmatch(v)
+		if m == nil {
+			badRequest(w, "Enter an amount like 15000 or 15000.50")
+			return
+		}
+		amount = &m[1]
+	}
+	if err := s.cfg.DB.SetExpectedIncome(r.Context(), amount); err != nil {
+		s.fail(w, r, fmt.Errorf("set expected income: %w", err))
+		return
+	}
+	to := "/spending"
+	if m := r.PostForm.Get("month"); monthRE.MatchString(m) {
+		to += "?month=" + m
+	}
+	http.Redirect(w, r, to, http.StatusSeeOther)
 }

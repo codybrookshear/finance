@@ -188,7 +188,7 @@ func seed(t *testing.T) *DB {
 		}
 	}
 	for _, s := range []string{`DELETE FROM balance_snapshots`, `DELETE FROM categorizations`, `DELETE FROM transactions`,
-		`DELETE FROM accounts`, `DELETE FROM connections`, `DELETE FROM sync_runs`} {
+		`DELETE FROM accounts`, `DELETE FROM connections`, `DELETE FROM sync_runs`, `DELETE FROM expected_income`} {
 		exec(s)
 	}
 	exec(`INSERT INTO accounts (id, org_name, name, display_name, balance, balance_at, hidden, include_in_net_worth) VALUES
@@ -381,7 +381,7 @@ func TestPages(t *testing.T) {
 		// This month has nothing posted yet, but income is expected to match
 		// last month's, so nothing is "underwater".
 		b = page("/spending")
-		for _, want := range []string{"Left this month", "$2,000.00", "~$2,000.00 income expected", `rel="prev"`} {
+		for _, want := range []string{"Left this month", "$2,000.00", "(last month's)", `rel="prev"`} {
 			if !strings.Contains(b, want) {
 				t.Errorf("this month: missing %q", want)
 			}
@@ -659,6 +659,31 @@ func TestEditing(t *testing.T) {
 		}
 		if c, _, _ := state("c04"); c == "Travel" {
 			t.Error("a cross-site request changed data")
+		}
+	})
+	t.Run("expected income", func(t *testing.T) {
+		spending := func() string { return body(t, get(t, h, "/spending")) }
+		if b := spending(); !strings.Contains(b, "(last month's)") {
+			t.Error("expected income should default to last month's")
+		}
+		res := post("/spending/expected-income", url.Values{"amount": {"$15,000"}, "month": {"2026-10"}})
+		if res.StatusCode != http.StatusSeeOther || res.Header.Get("Location") != "/spending?month=2026-10" {
+			t.Errorf("save: %d %s", res.StatusCode, res.Header.Get("Location"))
+		}
+		if b := spending(); !strings.Contains(b, "$15,000.00 income (expected)") || !strings.Contains(b, `value="15000.00"`) {
+			t.Errorf("set value not shown:\n%s", regexp.MustCompile(`(?s)<section class="card tally">.*?</section>`).FindString(b))
+		}
+		for _, bad := range []string{"abc", "-5", "1e9", "12.345"} {
+			if res := post("/spending/expected-income", url.Values{"amount": {bad}}); res.StatusCode != http.StatusBadRequest {
+				t.Errorf("amount %q: %d", bad, res.StatusCode)
+			}
+		}
+		if res := post("/spending/expected-income", url.Values{"amount": {"1"}}, "Sec-Fetch-Site", "cross-site"); res.StatusCode != http.StatusForbidden {
+			t.Errorf("cross-site: %d", res.StatusCode)
+		}
+		post("/spending/expected-income", url.Values{"amount": {"15000"}, "reset": {"1"}})
+		if b := spending(); !strings.Contains(b, "(last month's)") {
+			t.Error("reset should go back to last month's")
 		}
 	})
 }

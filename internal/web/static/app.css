@@ -285,41 +285,21 @@ form.note input { padding: 0.4rem 0.55rem; }
 .tally .meta { margin: 0.35rem 0 0; }
 .more-link { margin: 0.75rem 0; font-size: 0.9rem; }
 
-/* Bars: full at 10% over last month's spending; the red tick (90%) is last month's. */
-meter {
-  appearance: none;
-  display: block;
-  width: 100%;
-  height: 0.4rem;
-  border: 0;
-  border-radius: 999px;
-  background: var(--line);
-  overflow: hidden;
+/* The month's spending as one bar, a slice per category in its chip color. */
+.share { display: block; width: 100%; height: auto; margin-top: 0.6rem; }
+.seg { --chip-h: 0; --chip-s: 70%; fill: hsl(var(--chip-h) var(--chip-s) 82%); }
+.seg.none { fill: var(--line); }
+@media (prefers-color-scheme: dark) {
+  .seg { fill: hsl(var(--chip-h) calc(var(--chip-s) * 0.6) 32%); }
 }
-meter::-webkit-meter-bar { background: var(--line); border: 0; border-radius: 999px; height: 0.4rem; }
-meter::-webkit-meter-optimum-value { background: var(--in); border-radius: 999px; }
-meter::-webkit-meter-suboptimum-value,
-meter::-webkit-meter-even-less-good-value { background: var(--warn); border-radius: 999px; }
-meter::-moz-meter-bar { background: var(--warn); border-radius: 999px; }
-meter:-moz-meter-optimum::-moz-meter-bar { background: var(--in); }
-.tally meter.left { margin-top: 0.1rem; }
-.tally meter.left::-webkit-meter-optimum-value, .tally meter.left::-webkit-meter-suboptimum-value,
-.tally meter.left::-webkit-meter-even-less-good-value { background: var(--accent); }
-.tally meter.left::-moz-meter-bar { background: var(--accent); }
+.edit { margin-top: 0.4rem; font-size: 0.85rem; }
+.edit summary { color: var(--accent); }
+.edit form { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.4rem; }
+.edit input { flex: 1 1 10rem; min-width: 0; }
 
 .cats > li { display: block; padding: 0; }
 .cats summary { padding: 0.65rem 0.8rem; }
 .cats details[open] > summary { background: var(--bg); }
-.cats .bar { position: relative; grid-column: 1 / -1; margin-top: 0.45rem; }
-.cats .bar.marked::after {
-  content: "";
-  position: absolute;
-  left: 90.909%;
-  top: -0.2rem;
-  bottom: -0.2rem;
-  width: 2px;
-  background: var(--over);
-}
 .cats .meta { margin-top: 0.15rem; }
 .cats .txns { border: 0; border-top: 1px solid var(--line); border-radius: 0; background: var(--card); }
 .cats .txns > li.txn { padding-left: 0.8rem; }

@@ -15,10 +15,10 @@ with a phone-friendly web UI behind Cloudflare Access.
 - **Transactions:** search by name, note or amount; filter by account, category
   and dates. Tap a category chip to change it; similar transactions follow,
   favoring your most recent choices. Rename a transaction by giving it a note.
-- **Spending:** one month at a time (arrows to move between months), by
-  category, each bar measured against the same category last month (full at 10%
-  over, red tick at last month's level); tap a category to see and recategorize
-  its transactions. The current month shows what's left against expected income.
+- **Spending:** one month at a time (arrows to move between months), with one
+  bar showing each category's share of the month's spending; tap a category to
+  see and recategorize its transactions (the page then updates). The current
+  month shows what's left against expected income: set by you, else last month's.
 - **Accounts:** net worth, its history, and balances by institution, including
   balances you keep by hand (like your home's value). A picker switches the headline and
   chart between total, checking, savings, brokerage, retirement and real estate.

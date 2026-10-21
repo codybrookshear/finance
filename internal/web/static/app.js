@@ -42,6 +42,48 @@
 
   document.addEventListener("DOMContentLoaded", drawNetWorth);
 
+  // Spending: recategorizing a transaction reloads the page, so the totals and
+  // the share bar update and the transaction shows up under its new category.
+  // The categories that were open (and the new one) are opened again, and the
+  // scroll position kept, through sessionStorage (this tab only; may be
+  // unavailable, and then the page just reloads closed).
+  const reopenKey = "spending-reopen";
+  document.addEventListener("htmx:afterRequest", (e) => {
+    // (detail.elt is the swapped-in row's list by now: go by the request.)
+    const d = e.detail;
+    if (!d.successful || !d.pathInfo || d.pathInfo.requestPath !== "/transactions/category") return;
+    if (!document.querySelector(".cats")) return;
+    const ids = Array.from(document.querySelectorAll(".cats details[open] > ul[id]")).map((u) => u.id);
+    const chosen = d.requestConfig && d.requestConfig.parameters && d.requestConfig.parameters.category;
+    if (chosen && ids.length > 0) {
+      for (const infix of ["", "in-"]) ids.push(ids[0].replace(/-(in-)?(\d+|none)$/, "-" + infix + chosen));
+    }
+    try { sessionStorage.setItem(reopenKey, JSON.stringify({ ids, y: Math.round(window.scrollY) })); } catch (err) { /* unavailable */ }
+    location.reload();
+  });
+  document.addEventListener("DOMContentLoaded", () => {
+    let saved = null;
+    try {
+      saved = JSON.parse(sessionStorage.getItem(reopenKey) || "null");
+      sessionStorage.removeItem(reopenKey);
+    } catch (err) { /* unavailable */ }
+    if (!saved || !Array.isArray(saved.ids) || typeof htmx === "undefined") return;
+    if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+    for (const id of saved.ids) {
+      const list = document.getElementById(id);
+      const details = list && list.parentElement;
+      if (!details || details.tagName !== "DETAILS") continue;
+      details.open = true;
+      htmx.trigger(details.querySelector("summary"), "click"); // loads the rows, as a tap would
+    }
+    // The rows arrive after the page does: keep the old scroll position until they have.
+    const y = Number(saved.y) || 0;
+    const keep = () => window.scrollTo(0, y);
+    keep();
+    document.addEventListener("htmx:afterSettle", keep);
+    setTimeout(() => document.removeEventListener("htmx:afterSettle", keep), 3000);
+  });
+
   // The Accounts chart picker applies as soon as you choose (the page is
   // server-rendered; without script, the form has a button).
   document.addEventListener("change", (e) => {

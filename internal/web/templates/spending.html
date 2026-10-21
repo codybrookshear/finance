@@ -14,12 +14,31 @@
   {{- with .Forecast}}
   <p class="label">Left this month</p>
   <p class="big"><span class="amt{{if .LeftNeg}} out{{else}} in{{end}}">{{money .Left ""}}</span></p>
-  <meter class="left" min="0" max="{{.Expected}}" value="{{$.Month.Spent}}"></meter>
-  <p class="meta">spending {{money $.Month.Spent ""}} of {{if .Typical}}~{{end}}{{money .Expected ""}} income{{if .Typical}} expected (recent months' average; {{money $.Month.Income ""}} so far){{end}}</p>
+  <p class="meta">spending {{money $.Month.Spent ""}} of {{money .Expected ""}} income{{if eq .Source "last"}} (last month's){{else if eq .Source "set"}} (expected){{end}}, {{money $.Month.Income ""}} so far</p>
+  <details class="edit">
+    <summary>Change expected income</summary>
+    <form method="post" action="/spending/expected-income">
+      <input type="hidden" name="month" value="{{$.YearMonth}}">
+      <input name="amount" value="{{.Setting}}" inputmode="decimal" autocomplete="off" placeholder="Monthly income, e.g. 15000" aria-label="Expected monthly income">
+      <button type="submit">Save</button>
+      <button type="submit" name="reset" value="1">Use last month's</button>
+    </form>
+  </details>
   {{- else}}
   <p class="label">Net income</p>
   <p class="big"><span class="amt{{if neg .Month.Net}} out{{else}} in{{end}}">{{money .Month.Net ""}}</span></p>
   <p class="meta">income {{money .Month.Income ""}} · spending {{money .Month.Spent ""}}</p>
+  {{- end}}
+  {{- if .Shares}}
+  <svg class="share" viewBox="0 0 1000 56" role="img" aria-label="Spending by category">
+    <clipPath id="share-clip"><rect width="1000" height="56" rx="14"/></clipPath>
+    <g clip-path="url(#share-clip)">
+    {{- range .Shares}}
+      <rect class="seg{{if .CategoryID}} c-{{.CategoryID}}{{else}} none{{end}}" x="{{.X}}" width="{{.W}}" height="56"><title>{{.Label}} {{money .Amount ""}} ({{.Percent}}%)</title></rect>
+      {{- if .Icon}}<text x="{{.Mid}}" y="41" text-anchor="middle" font-size="40">{{if .Emoji}}{{.Emoji}}{{else}}?{{end}}</text>{{end}}
+    {{- end}}
+    </g>
+  </svg>
   {{- end}}
 </section>
 
@@ -30,7 +49,6 @@
     <summary hx-get="{{.URL}}" hx-trigger="click once" hx-target="next ul" hx-swap="innerHTML">
       <span class="what"><span class="chip sm{{if .CategoryID}} c-{{.CategoryID}}{{else}} none{{end}}" aria-hidden="true">{{if .Emoji}}{{.Emoji}}{{else}}?{{end}}</span> {{.Label}}</span>
       <span class="amt{{if .Over}} over{{end}}">{{money .Amount ""}}</span>
-      <span class="bar{{if .HasLast}} marked{{end}}"><meter min="0" max="{{.BarMax}}" low="{{if .HasLast}}{{.Last}}{{else}}0{{end}}" high="{{if .HasLast}}{{.Last}}{{else}}0{{end}}" optimum="0" value="{{.Amount}}"></meter></span>
       {{- if .HasLast}}<span class="meta">last month {{money .Last ""}}</span>{{else}}<span class="meta">nothing last month</span>{{end}}
     </summary>
     <ul class="list txns" id="cat-{{$.YearMonth}}-{{if .CategoryID}}{{.CategoryID}}{{else}}none{{end}}"><li class="empty">Loading…</li></ul>
