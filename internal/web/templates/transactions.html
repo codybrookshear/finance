@@ -77,6 +77,7 @@
     <summary>
       <span class="what">{{.Title}}</span>
       <span class="amt{{if neg .Amount}} out{{else}} in{{end}}">{{money .Amount .Currency}}</span>
+      {{- if .Dated}}<span class="meta">{{day .At}}</span>{{end}}
     </summary>
     <dl>
       {{- if .Note}}<dt>Merchant</dt><dd>{{.Merchant}}</dd>{{end}}

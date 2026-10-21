@@ -301,7 +301,11 @@ form.note input { padding: 0.4rem 0.55rem; }
 .cats summary { padding: 0.65rem 0.8rem; }
 .cats details[open] > summary { background: var(--bg); }
 .cats .meta { margin-top: 0.15rem; }
-.cats .txns { border: 0; border-top: 1px solid var(--line); border-radius: 0; background: var(--card); }
+.cats .txns { border: 0; border-top: 1px solid var(--line); border-radius: 0; background: var(--bg); }
+.cats details[open] > summary { border-bottom: 1px solid var(--line); font-weight: 600; }
+.cats details[open] { border-bottom: 3px solid var(--line); }
+.cats .txns > li.txn { border-top: 1px solid var(--line); }
+.cats .txns .meta { margin-top: -0.1rem; }
 .cats .txns > li.txn { padding-left: 0.8rem; }
 .cats .txns > li:first-child, .cats .txns > li:last-child { border-radius: 0; }
 /* Rows that open an account's transactions. The li is a plain block, so the

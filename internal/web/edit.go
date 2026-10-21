@@ -171,6 +171,7 @@ func (s *Server) setCategory(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	t.Dated = fromSpending(r)
 	p := rowsPage{Rows: []txnRow{{Txn: t}}}
 	others, err := s.cfg.DB.TxnsByKey(r.Context(), changed)
 	if err != nil {
@@ -178,7 +179,7 @@ func (s *Server) setCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, o := range others {
-		o.OOB = true
+		o.OOB, o.Dated = true, t.Dated
 		p.Rows = append(p.Rows, txnRow{Txn: o})
 	}
 	if p.Categories, err = s.cfg.DB.Categories(r.Context()); err != nil {
@@ -212,7 +213,7 @@ func (s *Server) setNote(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	t.Open = true
+	t.Open, t.Dated = true, fromSpending(r)
 	p := rowsPage{Rows: []txnRow{{Txn: t}}}
 	if p.Categories, err = s.cfg.DB.Categories(r.Context()); err != nil {
 		s.fail(w, r, err)

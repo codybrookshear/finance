@@ -116,6 +116,11 @@ func (s *Server) transactions(w http.ResponseWriter, r *http.Request) {
 	}
 	var lastDay string
 	p.Rows, lastDay = s.groupByDay(txns, prevDay)
+	if q.Get("dated") == "1" { // a Spending category's list: the date on every row, no day headings
+		for i := range p.Rows {
+			p.Rows[i].Day, p.Rows[i].Dated = "", true
+		}
+	}
 	if next != nil {
 		q.Set("after", next.String())
 		q.Set("day", lastDay)
@@ -300,7 +305,7 @@ func (s *Server) spending(w http.ResponseWriter, r *http.Request) {
 
 // categoryURL is the month's transactions in one category (nil = none).
 func (s *Server) categoryURL(from, to string, id *int32) string {
-	q := url.Values{"from": {from}, "to": {to}, "category": {"none"}}
+	q := url.Values{"from": {from}, "to": {to}, "category": {"none"}, "dated": {"1"}}
 	if id != nil {
 		q.Set("category", strconv.Itoa(int(*id)))
 	}
@@ -435,4 +440,11 @@ func commas(n int) string {
 		b.WriteRune(c)
 	}
 	return b.String()
+}
+
+// fromSpending reports whether an htmx request was made from the Spending
+// page, whose transaction lists show a date on every row.
+func fromSpending(r *http.Request) bool {
+	u, err := url.Parse(r.Header.Get("HX-Current-URL"))
+	return err == nil && u.Path == "/spending"
 }

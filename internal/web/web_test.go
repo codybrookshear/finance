@@ -353,7 +353,7 @@ func TestPages(t *testing.T) {
 			t.Error("a past month shows its net, not a forecast")
 		}
 		// Rows open the month's transactions in that category, in place.
-		groceries := regexp.MustCompile(`hx-get="(/transactions\?category=\d+&amp;from=[0-9-]+&amp;to=[0-9-]+)"`).FindStringSubmatch(b)
+		groceries := regexp.MustCompile(`hx-get="(/transactions\?category=\d+&amp;dated=1&amp;from=[0-9-]+&amp;to=[0-9-]+)"`).FindStringSubmatch(b)
 		if groceries == nil {
 			t.Fatal("no category link")
 		}
@@ -362,10 +362,13 @@ func TestPages(t *testing.T) {
 			t.Error("category link")
 		}
 		rows := page(url, "HX-Request", "true", "HX-Target", "cat-"+lm.Format("2006-01")+"-1")
+		if strings.Contains(rows, `class="day"`) || !regexp.MustCompile(`<span class="meta">[A-Z][a-z]{2} 10(, \d{4})?</span>`).MatchString(rows) {
+			t.Errorf("a category's rows should carry their dates, not day headings:\n%s", rows)
+		}
 		if strings.Contains(rows, "<html") || !strings.Contains(rows, "Grocery store") || !strings.Contains(rows, `hx-post="/transactions/category"`) {
 			t.Errorf("expanded rows should be a bare list of rows with category pickers:\n%s", rows)
 		}
-		none := regexp.MustCompile(`hx-get="(/transactions\?category=none&amp;from=[0-9-]+&amp;to=[0-9-]+)"`).FindStringSubmatch(b)
+		none := regexp.MustCompile(`hx-get="(/transactions\?category=none&amp;dated=1&amp;from=[0-9-]+&amp;to=[0-9-]+)"`).FindStringSubmatch(b)
 		if none == nil {
 			t.Fatal("no uncategorized link")
 		}
