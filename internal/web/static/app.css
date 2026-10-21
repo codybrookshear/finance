@@ -355,25 +355,5 @@ meter:-moz-meter-optimum::-moz-meter-bar { background: var(--in); }
 .chart { width: 100%; min-height: 240px; color: var(--accent); margin-bottom: 1rem; }
 .chart .u-axis { color: var(--muted); }
 
-
-/* Accounts: the retirement switch */
-.toggle { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
-.switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.3rem 0;
-  color: var(--fg);
-  font-size: 0.9rem;
-  text-decoration: none;
-}
-.switch::after {
-  content: "";
-  width: 2.2rem;
-  height: 1.3rem;
-  border-radius: 999px;
-  background: radial-gradient(circle, var(--card) 0.45rem, transparent 0.46rem) 0.1rem center / 1.1rem 1.1rem no-repeat var(--muted);
-}
-.switch.on::after {
-  background: radial-gradient(circle, var(--card) 0.45rem, transparent 0.46rem) calc(100% - 0.1rem) center / 1.1rem 1.1rem no-repeat var(--accent);
-}
+.chartpick { margin: 0 0 0.4rem; }
+.chartpick select { width: auto; min-width: 11rem; font-weight: 600; }

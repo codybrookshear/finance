@@ -20,8 +20,8 @@ with a phone-friendly web UI behind Cloudflare Access.
   over, red tick at last month's level); tap a category to see and recategorize
   its transactions. The current month shows what's left against expected income.
 - **Accounts:** net worth, its history, and balances by institution, including
-  balances you keep by hand (like your home's value). A switch counts retirement
-  accounts in the total and chart or leaves them out.
+  balances you keep by hand (like your home's value). A picker switches the headline and
+  chart between total, checking, savings, brokerage, retirement and real estate.
 - **Sync:** every 3 hours from SimpleFIN, with history backfill, pending
   transactions, transfer detection between your own accounts, and joint
   accounts reported by two logins shown once.
