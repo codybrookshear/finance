@@ -3,7 +3,7 @@ package web
 import (
 	"net/http"
 	"net/url"
-	"sort"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -180,24 +180,33 @@ func (s *Server) groupByDay(txns []Txn, prevDay string) ([]txnRow, string) {
 	return rows, prevDay
 }
 
-// spendLine is a category's spending in the shown month, with what's needed
-// to draw its bar against last month: the bar is full at 10% over last
-// month's spending, so last month's amount sits at the 90% mark.
+// spendLine is a category's spending in the shown month, with last month's
+// for comparison.
 type spendLine struct {
 	Line
 	Last    string // last month's spending in this category ("" if none)
-	BarMax  string // the amount that fills the bar
-	Over    bool   // spent more than last month
 	HasLast bool
+	Over    bool // spent more than last month
+}
+
+// shareSeg is a category's slice of the month's spending bar, in thousandths
+// of the bar's width.
+type shareSeg struct {
+	Line
+	X, W, Mid int
+	Percent   int
+	Icon      bool // wide enough to show the category's icon
 }
 
 // forecast is the current month's income outlook: income is expected to
-// match the recent months', so spending early in the month isn't "underwater".
+// match what you set, else last month's, so spending early in the month
+// isn't "underwater".
 type forecast struct {
 	Expected string // expected income for the whole month (never less than what's arrived)
 	Left     string // Expected minus spending so far
 	LeftNeg  bool
-	Typical  bool // Expected is the recent average (not income already received)
+	Source   string // "set" (by you), "last" (month's income) or "arrived" (more than expected has come in)
+	Setting  string // the value you set ("" if none), for the form
 }
 
 type spendingPage struct {
@@ -206,14 +215,13 @@ type spendingPage struct {
 	From, To              string // the month's first and last day
 	Month                 Month
 	Cats                  []spendLine
+	Shares                []shareSeg
 	Income                []Line
 	Forecast              *forecast
 	HasData               bool
 }
 
-// expectedIncomeMonths is how many recent full months the expected income
-// averages.
-const expectedIncomeMonths = 3
+var monthRE = regexp.MustCompile(`^\d{4}-(0[1-9]|1[0-2])$`)
 
 func (s *Server) spending(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().In(s.cfg.Location)
@@ -263,25 +271,25 @@ func (s *Server) spending(w http.ResponseWriter, r *http.Request) {
 	for _, l := range m.Categories {
 		l.URL = s.categoryURL(p.From, p.To, l.CategoryID)
 		sl := spendLine{Line: l}
-		spent, _ := toCents(l.Amount)
 		if lc, ok := toCents(last[l.Label]); ok && lc > 0 {
 			sl.HasLast, sl.Last = true, last[l.Label]
-			sl.BarMax = fromCents(lc * 11 / 10)
+			spent, _ := toCents(l.Amount)
 			sl.Over = spent > lc
-		} else {
-			sl.BarMax, sl.Over = l.Amount, spent > 0 // new this month: full, no baseline
-		}
-		if c, _ := toCents(sl.BarMax); c <= 0 {
-			sl.BarMax = "1.00"
 		}
 		p.Cats = append(p.Cats, sl)
 	}
+	p.Shares = shares(p.Cats)
 	for _, l := range m.IncomeCategories {
 		l.URL = s.categoryURL(p.From, p.To, l.CategoryID)
 		p.Income = append(p.Income, l)
 	}
 	if ym == cur {
-		p.Forecast = forecastFor(byMonth, cur, m)
+		set, err := s.cfg.DB.ExpectedIncome(r.Context())
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		p.Forecast = forecastFor(byMonth[first.AddDate(0, -1, 0).Format("2006-01")], set, m)
 	}
 	if p.base, err = s.base(r, "spending"); err != nil {
 		s.fail(w, r, err)
@@ -299,36 +307,49 @@ func (s *Server) categoryURL(from, to string, id *int32) string {
 	return "/transactions?" + q.Encode()
 }
 
-// forecastFor expects this month's income to match the average of the last
-// few full months with income, or what has already arrived if that's more.
-// It returns nil when there's no history to go on.
-func forecastFor(byMonth map[string]Month, cur string, m Month) *forecast {
-	var yms []string
-	for ym, o := range byMonth {
-		if c, _ := toCents(o.Income); ym < cur && c > 0 {
-			yms = append(yms, ym)
+// shares lays the month's spending out as a bar: each category with money
+// spent takes a width in proportion to its amount (the widest first, as the
+// lines are).
+func shares(cats []spendLine) []shareSeg {
+	var total int64
+	for _, c := range cats {
+		if n, _ := toCents(c.Amount); n > 0 {
+			total += n
 		}
 	}
-	sort.Sort(sort.Reverse(sort.StringSlice(yms)))
-	if len(yms) > expectedIncomeMonths {
-		yms = yms[:expectedIncomeMonths]
+	var segs []shareSeg
+	var before int64
+	for _, c := range cats {
+		n, _ := toCents(c.Amount)
+		if n <= 0 {
+			continue
+		}
+		x, end := int(before*1000/total), int((before+n)*1000/total)
+		segs = append(segs, shareSeg{Line: c.Line, X: x, W: end - x, Mid: (x + end) / 2,
+			Percent: int((n*100 + total/2) / total), Icon: end-x >= 70})
+		before += n
 	}
-	if len(yms) == 0 {
+	return segs
+}
+
+// forecastFor expects this month's income to be what you set, else last
+// month's income, or what has already arrived if that's more. It returns nil
+// when there's nothing to go on.
+func forecastFor(lastMonth Month, set *string, m Month) *forecast {
+	f := forecast{Source: "last"}
+	var expected int64
+	if set != nil {
+		expected, _ = toCents(*set)
+		f.Source, f.Setting = "set", *set
+	} else if expected, _ = toCents(lastMonth.Income); expected <= 0 {
 		return nil
 	}
-	var sum int64
-	for _, ym := range yms {
-		c, _ := toCents(byMonth[ym].Income)
-		sum += c
-	}
-	expected, typical := sum/int64(len(yms)), true
-	got, _ := toCents(m.Income)
-	if got > expected {
-		expected, typical = got, false
+	if got, _ := toCents(m.Income); got > expected {
+		expected, f.Source = got, "arrived"
 	}
 	spent, _ := toCents(m.Spent)
-	return &forecast{Expected: fromCents(expected), Left: fromCents(expected - spent),
-		LeftNeg: expected < spent, Typical: typical}
+	f.Expected, f.Left, f.LeftNeg = fromCents(expected), fromCents(expected-spent), expected < spent
+	return &f
 }
 
 func (s *Server) accounts(w http.ResponseWriter, r *http.Request) {

@@ -54,22 +54,39 @@ func TestCents(t *testing.T) {
 }
 
 func TestForecast(t *testing.T) {
-	by := map[string]Month{
-		"2026-10": {Income: "100.00", Spent: "500.00"},
-		"2026-09": {Income: "1000.00"}, "2026-08": {Income: "2000.00"},
-		"2026-07": {Income: "3000.00"}, "2026-06": {Income: "9000.00"}, // too old: only the last three count
-		"2026-05": {Income: "0.00"},
+	last := Month{Income: "2000.00"}
+	set := func(v string) *string { return &v }
+	f := forecastFor(last, nil, Month{Income: "100.00", Spent: "500.00"})
+	if f == nil || f.Expected != "2000.00" || f.Left != "1500.00" || f.LeftNeg || f.Source != "last" {
+		t.Errorf("forecast = %+v", f)
 	}
-	f := forecastFor(by, "2026-10", by["2026-10"])
-	if f == nil || f.Expected != "2000.00" || f.Left != "1500.00" || f.LeftNeg || !f.Typical {
+	f = forecastFor(last, set("15000.00"), Month{Spent: "500.00"})
+	if f.Expected != "15000.00" || f.Left != "14500.00" || f.Source != "set" || f.Setting != "15000.00" {
 		t.Errorf("forecast = %+v", f)
 	}
 	// More has arrived than expected: expect what came.
-	f = forecastFor(by, "2026-10", Month{Income: "2500.00", Spent: "3000.00"})
-	if f.Expected != "2500.00" || f.Left != "-500.00" || !f.LeftNeg || f.Typical {
+	f = forecastFor(last, nil, Month{Income: "2500.00", Spent: "3000.00"})
+	if f.Expected != "2500.00" || f.Left != "-500.00" || !f.LeftNeg || f.Source != "arrived" {
 		t.Errorf("forecast = %+v", f)
 	}
-	if forecastFor(map[string]Month{}, "2026-10", Month{}) != nil {
-		t.Error("no history, no forecast")
+	if forecastFor(Month{}, nil, Month{}) != nil {
+		t.Error("no last month and nothing set: no forecast")
+	}
+}
+
+func TestShares(t *testing.T) {
+	line := func(amount string) spendLine { return spendLine{Line: Line{Amount: amount}} }
+	segs := shares([]spendLine{line("60.00"), line("30.00"), line("10.00"), line("-5.00")})
+	if len(segs) != 3 {
+		t.Fatalf("segments = %+v", segs)
+	}
+	if s := segs[0]; s.X != 0 || s.W != 600 || s.Percent != 60 || !s.Icon {
+		t.Errorf("first = %+v", s)
+	}
+	if s := segs[2]; s.X != 900 || s.W != 100 || s.X+s.W != 1000 {
+		t.Errorf("last = %+v", s)
+	}
+	if shares(nil) != nil {
+		t.Error("nothing spent, no bar")
 	}
 }
