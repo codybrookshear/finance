@@ -186,12 +186,14 @@ func (s *Server) groupByDay(txns []Txn, prevDay string) ([]txnRow, string) {
 }
 
 // spendLine is a category's spending in the shown month, with last month's
-// for comparison.
+// and its target for comparison.
 type spendLine struct {
 	Line
-	Last    string // last month's spending in this category ("" if none)
-	HasLast bool
-	Over    bool // spent more than last month
+	Last       string // last month's spending in this category ("" if none)
+	HasLast    bool
+	Target     string // the category's monthly target ("" if none)
+	TargetLeft string // how far spending is under the target, or with Over, over it
+	Over       bool   // spent more than the target, or with none, than last month
 }
 
 // shareSeg is a category's slice of the month's spending bar, in thousandths
@@ -223,6 +225,7 @@ type spendingPage struct {
 	Shares                []shareSeg
 	Income                []Line
 	Forecast              *forecast
+	Untargeted            []Category // expense categories with no line, for the target form
 	HasData               bool
 }
 
@@ -273,13 +276,46 @@ func (s *Server) spending(w http.ResponseWriter, r *http.Request) {
 	for _, l := range byMonth[first.AddDate(0, -1, 0).Format("2006-01")].Categories {
 		last[l.Label] = l.Amount
 	}
+	targets, err := s.cfg.DB.Targets(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	cats, err := s.cfg.DB.Categories(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	shown := map[int32]bool{}
+	for _, l := range m.Categories {
+		if l.CategoryID != nil {
+			shown[*l.CategoryID] = true
+		}
+	}
+	// A category with a target gets a line even with nothing spent yet.
+	for _, c := range cats {
+		if _, ok := targets[c.ID]; ok && c.Kind == "expense" && !shown[c.ID] {
+			m.Categories = append(m.Categories, Line{Label: c.Name, Amount: "0.00", CategoryID: &c.ID, Emoji: c.Emoji})
+			shown[c.ID] = true
+		}
+	}
+	for _, c := range cats {
+		if c.Kind == "expense" && !shown[c.ID] {
+			p.Untargeted = append(p.Untargeted, c)
+		}
+	}
 	for _, l := range m.Categories {
 		l.URL = s.categoryURL(p.From, p.To, l.CategoryID)
 		sl := spendLine{Line: l}
+		spent, _ := toCents(l.Amount)
 		if lc, ok := toCents(last[l.Label]); ok && lc > 0 {
 			sl.HasLast, sl.Last = true, last[l.Label]
-			spent, _ := toCents(l.Amount)
 			sl.Over = spent > lc
+		}
+		if l.CategoryID != nil && targets[*l.CategoryID] != "" {
+			sl.Target = targets[*l.CategoryID]
+			target, _ := toCents(sl.Target)
+			sl.TargetLeft, sl.Over = fromCents(max(target-spent, spent-target)), spent > target
 		}
 		p.Cats = append(p.Cats, sl)
 	}

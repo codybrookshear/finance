@@ -86,6 +86,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /transactions/category", s.setCategory)
 	mux.HandleFunc("POST /transactions/note", s.setNote)
 	mux.HandleFunc("POST /spending/expected-income", s.setExpectedIncome)
+	mux.HandleFunc("POST /spending/target", s.setTarget)
 	mux.HandleFunc("GET /categories.css", s.categoriesCSS)
 	mux.HandleFunc("GET /static/", s.serveStatic)
 	csrf := http.NewCrossOriginProtection() // Sec-Fetch-Site / Origin checks on non-GET requests

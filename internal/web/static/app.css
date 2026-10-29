@@ -296,6 +296,8 @@ form.note input { padding: 0.4rem 0.55rem; }
 .edit summary { color: var(--accent); }
 .edit form { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.4rem; }
 .edit input { flex: 1 1 10rem; min-width: 0; }
+.edit select { flex: 1 1 8rem; min-width: 0; }
+.target-other { margin: 0.6rem 0 0; }
 
 .cats > li { display: block; padding: 0; }
 .cats summary { padding: 0.65rem 0.8rem; }
@@ -308,6 +310,10 @@ form.note input { padding: 0.4rem 0.55rem; }
 .cats .txns .meta { margin-top: -0.1rem; }
 .cats .txns > li.txn { padding-left: 0.8rem; }
 .cats .txns > li:first-child, .cats .txns > li:last-child { border-radius: 0; }
+/* A category's target form, above its transactions. */
+.cats .edit.target { margin: 0; padding: 0.5rem 0.8rem; background: var(--bg); border-top: 1px solid var(--line); }
+.cats .edit.target > summary, .cats .edit.target[open] > summary { padding: 0; background: none; border: 0; font-weight: normal; }
+.cats .edit.target[open] { border-bottom: 0; }
 /* Rows that open an account's transactions. The li is a plain block, so the
    link fills it edge to edge. */
 .accounts > li.acct { display: block; padding: 0; }
