@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -104,6 +103,43 @@ func (db *DB) SetExpectedIncome(ctx context.Context, amount *string) error {
 		}
 		_, err := tx.Exec(ctx, `INSERT INTO expected_income (id, amount) VALUES (1, $1::numeric)
 			ON CONFLICT (id) DO UPDATE SET amount = EXCLUDED.amount`, *amount)
+		return err
+	})
+}
+
+// Targets are the monthly spending targets set by hand, by category ID.
+func (db *DB) Targets(ctx context.Context) (map[int32]string, error) {
+	rows, err := db.Pool.Query(ctx, `SELECT category_id, round(amount, 2)::text FROM category_targets`)
+	if err != nil {
+		return nil, err
+	}
+	targets := map[int32]string{}
+	var id int32
+	var amount string
+	_, err = pgx.ForEachRow(rows, []any{&id, &amount}, func() error {
+		targets[id] = amount
+		return nil
+	})
+	return targets, err
+}
+
+// SetTarget sets an expense category's monthly spending target (nil clears
+// it). ErrNotFound if there's no such expense category.
+func (db *DB) SetTarget(ctx context.Context, categoryID int32, amount *string) error {
+	return db.edit(ctx, func(tx pgx.Tx) error {
+		var ok bool
+		err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT FROM categories WHERE id = $1 AND kind = 'expense')`, categoryID).Scan(&ok)
+		if err != nil {
+			return err
+		} else if !ok {
+			return ErrNotFound
+		}
+		if amount == nil {
+			_, err = tx.Exec(ctx, `DELETE FROM category_targets WHERE category_id = $1`, categoryID)
+			return err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO category_targets (category_id, amount) VALUES ($1, $2::numeric)
+			ON CONFLICT (category_id) DO UPDATE SET amount = EXCLUDED.amount`, categoryID, *amount)
 		return err
 	})
 }
@@ -222,7 +258,29 @@ func (s *Server) setNote(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "transactions", "rows", p)
 }
 
-var incomeRE = regexp.MustCompile(`^\$?(\d{1,9}(?:\.\d{1,2})?)$`)
+// formAmount reads the form's amount, typed like "$15,000.50" (nil when
+// blank or reset). It answers 400 and returns false if it can't be read.
+func formAmount(w http.ResponseWriter, r *http.Request) (*string, bool) {
+	v := strings.ReplaceAll(strings.TrimSpace(r.PostForm.Get("amount")), ",", "")
+	if v == "" || r.PostForm.Get("reset") != "" {
+		return nil, true
+	}
+	m := amountRE.FindStringSubmatch(v)
+	if m == nil {
+		badRequest(w, "Enter an amount like 15000 or 15000.50")
+		return nil, false
+	}
+	return &m[1], true
+}
+
+// backToSpending returns to the Spending page's month the form came from.
+func backToSpending(w http.ResponseWriter, r *http.Request) {
+	to := "/spending"
+	if m := r.PostForm.Get("month"); monthRE.MatchString(m) {
+		to += "?month=" + m
+	}
+	http.Redirect(w, r, to, http.StatusSeeOther)
+}
 
 // setExpectedIncome saves the expected monthly income typed on the Spending
 // page ("" puts it back to last month's income), then returns to that month.
@@ -230,22 +288,39 @@ func (s *Server) setExpectedIncome(w http.ResponseWriter, r *http.Request) {
 	if !s.parseForm(w, r) {
 		return
 	}
-	var amount *string
-	if v := strings.ReplaceAll(strings.TrimSpace(r.PostForm.Get("amount")), ",", ""); v != "" && r.PostForm.Get("reset") == "" {
-		m := incomeRE.FindStringSubmatch(v)
-		if m == nil {
-			badRequest(w, "Enter an amount like 15000 or 15000.50")
-			return
-		}
-		amount = &m[1]
+	amount, ok := formAmount(w, r)
+	if !ok {
+		return
 	}
 	if err := s.cfg.DB.SetExpectedIncome(r.Context(), amount); err != nil {
 		s.fail(w, r, fmt.Errorf("set expected income: %w", err))
 		return
 	}
-	to := "/spending"
-	if m := r.PostForm.Get("month"); monthRE.MatchString(m) {
-		to += "?month=" + m
+	backToSpending(w, r)
+}
+
+// setTarget saves an expense category's monthly spending target typed on the
+// Spending page ("" removes it), then returns to that month.
+func (s *Server) setTarget(w http.ResponseWriter, r *http.Request) {
+	if !s.parseForm(w, r) {
+		return
 	}
-	http.Redirect(w, r, to, http.StatusSeeOther)
+	id, err := strconv.ParseInt(r.PostForm.Get("category"), 10, 32)
+	if err != nil {
+		badRequest(w, "Pick a category")
+		return
+	}
+	amount, ok := formAmount(w, r)
+	if !ok {
+		return
+	}
+	err = s.cfg.DB.SetTarget(r.Context(), int32(id), amount)
+	if errors.Is(err, ErrNotFound) {
+		badRequest(w, "No such spending category")
+		return
+	} else if err != nil {
+		s.fail(w, r, fmt.Errorf("set target: %w", err))
+		return
+	}
+	backToSpending(w, r)
 }

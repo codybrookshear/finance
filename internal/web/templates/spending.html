@@ -42,15 +42,30 @@
   {{- end}}
 </section>
 
-{{if .HasData -}}
+{{if or .HasData .Cats -}}
 <ul class="list cats">
-  {{- range .Cats}}
+  {{- range $cat := .Cats}}
   <li><details class="cat">
     <summary hx-get="{{.URL}}" hx-trigger="click once" hx-target="next ul" hx-swap="innerHTML">
       <span class="what"><span class="chip sm{{if .CategoryID}} c-{{.CategoryID}}{{else}} none{{end}}" aria-hidden="true">{{if .Emoji}}{{.Emoji}}{{else}}?{{end}}</span> {{.Label}}</span>
       <span class="amt{{if .Over}} over{{end}}">{{money .Amount ""}}</span>
-      {{- if .HasLast}}<span class="meta">last month {{money .Last ""}}</span>{{else}}<span class="meta">nothing last month</span>{{end}}
+      <span class="meta">
+        {{- if .Target}}{{money .TargetLeft ""}} {{if .Over}}over{{else}}left of{{end}} {{money .Target ""}} target · {{end}}
+        {{- if .HasLast}}last month {{money .Last ""}}{{else}}nothing last month{{end -}}
+      </span>
     </summary>
+    {{- with .CategoryID}}
+    <details class="edit target">
+      <summary>{{if $cat.Target}}Change target{{else}}Set a monthly target{{end}}</summary>
+      <form method="post" action="/spending/target">
+        <input type="hidden" name="month" value="{{$.YearMonth}}">
+        <input type="hidden" name="category" value="{{.}}">
+        <input name="amount" value="{{$cat.Target}}" inputmode="decimal" autocomplete="off" placeholder="Monthly target, e.g. 500" aria-label="{{$cat.Label}} monthly target">
+        <button type="submit">Save</button>
+        {{- if $cat.Target}}<button type="submit" name="reset" value="1">Remove</button>{{end}}
+      </form>
+    </details>
+    {{- end}}
     <ul class="list txns" id="cat-{{$.YearMonth}}-{{if .CategoryID}}{{.CategoryID}}{{else}}none{{end}}"><li class="empty">Loading…</li></ul>
   </details></li>
   {{- end}}
@@ -68,4 +83,17 @@
 {{else -}}
 <p class="empty">No posted transactions in {{monthName .YearMonth}}.</p>
 {{end}}
+{{- if .Untargeted}}
+<details class="edit target-other">
+  <summary>Set a target for another category</summary>
+  <form method="post" action="/spending/target">
+    <input type="hidden" name="month" value="{{.YearMonth}}">
+    <select name="category" aria-label="Category">
+      {{- range .Untargeted}}<option value="{{.ID}}">{{if .Emoji}}{{.Emoji}} {{end}}{{.Name}}</option>{{end}}
+    </select>
+    <input name="amount" inputmode="decimal" autocomplete="off" placeholder="Monthly target, e.g. 500" aria-label="Monthly target">
+    <button type="submit">Save</button>
+  </form>
+</details>
+{{- end}}
 {{- end}}

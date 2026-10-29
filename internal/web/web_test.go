@@ -188,7 +188,8 @@ func seed(t *testing.T) *DB {
 		}
 	}
 	for _, s := range []string{`DELETE FROM balance_snapshots`, `DELETE FROM categorizations`, `DELETE FROM transactions`,
-		`DELETE FROM accounts`, `DELETE FROM connections`, `DELETE FROM sync_runs`, `DELETE FROM expected_income`} {
+		`DELETE FROM accounts`, `DELETE FROM connections`, `DELETE FROM sync_runs`, `DELETE FROM expected_income`,
+		`DELETE FROM category_targets`} {
 		exec(s)
 	}
 	exec(`INSERT INTO accounts (id, org_name, name, display_name, balance, balance_at, hidden, include_in_net_worth) VALUES
@@ -687,6 +688,65 @@ func TestEditing(t *testing.T) {
 		post("/spending/expected-income", url.Values{"amount": {"15000"}, "reset": {"1"}})
 		if b := spending(); !strings.Contains(b, "(last month's)") {
 			t.Error("reset should go back to last month's")
+		}
+	})
+	t.Run("spending targets", func(t *testing.T) {
+		groceries := catID("Groceries")
+		target := func(amount string, extra ...string) *http.Response {
+			form := url.Values{"category": {groceries}, "amount": {amount}, "month": {"2026-10"}}
+			for i := 0; i+1 < len(extra); i += 2 {
+				form.Set(extra[i], extra[i+1])
+			}
+			return post("/spending/target", form)
+		}
+		if b := page(t, h, "/spending"); !strings.Contains(b, "Set a target for another category") || !strings.Contains(b, "Groceries</option>") {
+			t.Error("Groceries should be offered a target")
+		}
+		res := target("$500")
+		if res.StatusCode != http.StatusSeeOther || res.Header.Get("Location") != "/spending?month=2026-10" {
+			t.Errorf("save: %d %s", res.StatusCode, res.Header.Get("Location"))
+		}
+		// Nothing spent this month yet, but a target puts Groceries on the list.
+		b := page(t, h, "/spending")
+		for _, want := range []string{"$500.00 left of $500.00 target", `value="500.00"`, ">Remove</button>"} {
+			if !strings.Contains(b, want) {
+				t.Errorf("this month: missing %q", want)
+			}
+		}
+		if strings.Contains(b, "Groceries</option>") {
+			t.Error("Groceries has a line now, so it isn't offered again")
+		}
+		prev := regexp.MustCompile(`href="(/spending\?month=[0-9-]+)"[^>]*rel="prev"`).FindStringSubmatch(b)
+		if prev == nil {
+			t.Fatal("no previous month")
+		}
+		if b := page(t, h, prev[1]); !strings.Contains(b, "$487.66 left of $500.00 target") {
+			t.Error("last month's $12.34 should leave $487.66")
+		}
+		target("10")
+		if b := page(t, h, prev[1]); !strings.Contains(b, "$2.34 over $10.00 target") || !strings.Contains(b, `<span class="amt over">$12.34</span>`) {
+			t.Error("over target")
+		}
+		var income string
+		if err := owner.QueryRow(ctx, `SELECT id::text FROM categories WHERE kind = 'income' LIMIT 1`).Scan(&income); err != nil {
+			t.Fatal(err)
+		}
+		for name, form := range map[string]url.Values{
+			"income category":  {"category": {income}, "amount": {"5"}},
+			"no such category": {"category": {"999999"}, "amount": {"5"}},
+			"bad category":     {"category": {"abc"}, "amount": {"5"}},
+			"bad amount":       {"category": {groceries}, "amount": {"-5"}},
+		} {
+			if res := post("/spending/target", form); res.StatusCode != http.StatusBadRequest {
+				t.Errorf("%s: %d", name, res.StatusCode)
+			}
+		}
+		if res := post("/spending/target", url.Values{"category": {groceries}, "amount": {"1"}}, "Sec-Fetch-Site", "cross-site"); res.StatusCode != http.StatusForbidden {
+			t.Errorf("cross-site: %d", res.StatusCode)
+		}
+		target("10", "reset", "1")
+		if b := page(t, h, "/spending"); strings.Contains(b, "target ·") || !strings.Contains(b, "Groceries</option>") {
+			t.Error("removing the target should take Groceries off this month's list")
 		}
 	})
 }
